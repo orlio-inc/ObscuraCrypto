@@ -1,0 +1,22 @@
+{
+  "databaseSize" : 1234567,
+  "folder" : {
+    "folderKeyEncrypted" : "Dnkfx6u7W441h9sRG7E1NPDfyuCqohJABzGhrudSJ9LQMeCLlJAof8kJOYaLkMKaNGpYTAoRhdUSrb+2",
+    "passwordHash" : "8np0PwUSrHx639LLqjOLNqZMF7urSFv4zImpykwWtUg=",
+    "passwordSalt" : "A2c9bqhRV0TquoItZMN7GflKNONkvQBHq\/ZvnBSJZbg="
+  },
+  "folderKeyFingerprint" : "c4b36bd217b07336",
+  "folderPassword" : "folder pass 1",
+  "generatedBy" : "Obscura Photo Vault app",
+  "masterKeyFingerprint" : "1961967b86b798b5",
+  "photo" : {
+    "count" : 20000,
+    "seed" : 1
+  },
+  "vaultPassword" : "correct horse battery staple",
+  "video" : {
+    "chunkSize" : 65536,
+    "count" : 200000,
+    "seed" : 2
+  }
+}
