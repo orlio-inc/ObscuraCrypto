@@ -302,11 +302,15 @@ public enum ChunkedMediaEncryptor {
             let cipher = try ChunkedMediaCipher(header: header, masterKey: masterKey, folderKey: folderKey)
 
             for index in 0..<header.chunkCount {
-                guard let plaintext = try input.read(upToCount: header.plaintextSize(ofChunk: index)),
-                      plaintext.count == header.plaintextSize(ofChunk: index) else {
-                    throw ObscuraCryptoError.chunkedFileSizeMismatch(expected: Int(totalSize), actual: -1)
+                // A pool per chunk, so each chunk's buffers are freed before
+                // the next is read rather than when the whole file is done.
+                try autoreleasepool {
+                    guard let plaintext = try input.read(upToCount: header.plaintextSize(ofChunk: index)),
+                          plaintext.count == header.plaintextSize(ofChunk: index) else {
+                        throw ObscuraCryptoError.chunkedFileSizeMismatch(expected: Int(totalSize), actual: -1)
+                    }
+                    try output.write(contentsOf: try cipher.seal(plaintext, chunk: index))
                 }
-                try output.write(contentsOf: try cipher.seal(plaintext, chunk: index))
             }
             try output.synchronize()
             try moveIntoPlace(temporary, at: destination)
@@ -378,7 +382,10 @@ public struct ChunkedMediaReader: Sendable {
                 try? output.close()
             }
             for index in 0..<header.chunkCount {
-                try output.write(contentsOf: try readChunk(index, from: input, cipher: cipher))
+                // See `ChunkedMediaEncryptor.encrypt`: freed chunk by chunk.
+                try autoreleasepool {
+                    try output.write(contentsOf: try readChunk(index, from: input, cipher: cipher))
+                }
                 progress?(index + 1, header.chunkCount)
             }
             try output.synchronize()
