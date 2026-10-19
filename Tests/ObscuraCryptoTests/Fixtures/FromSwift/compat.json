@@ -1,0 +1,239 @@
+{
+  "cases" : [
+    {
+      "expect" : "opens",
+      "file" : "vault.header",
+      "kind" : "vaultHeader"
+    },
+    {
+      "expect" : "vaultHeaderChecksumMismatch",
+      "file" : "tampered/vault-checksum.header",
+      "kind" : "vaultHeader"
+    },
+    {
+      "expect" : "invalidVaultHeader",
+      "file" : "tampered/vault-version.header",
+      "kind" : "vaultHeader"
+    },
+    {
+      "expect" : "unsupportedCipherSuite",
+      "file" : "tampered/vault-suite.header",
+      "kind" : "vaultHeader"
+    },
+    {
+      "expect" : "iterationsBelowMinimum",
+      "file" : "tampered/vault-rounds.header",
+      "kind" : "vaultHeader"
+    },
+    {
+      "count" : 20000,
+      "expect" : "opens",
+      "file" : "photo.data.enc",
+      "folder" : false,
+      "kind" : "singleShot",
+      "seed" : 1
+    },
+    {
+      "count" : 20000,
+      "expect" : "opens",
+      "file" : "photo-folder.data.enc",
+      "folder" : true,
+      "kind" : "singleShot",
+      "seed" : 1
+    },
+    {
+      "count" : 20000,
+      "expect" : "authenticationFailed",
+      "file" : "tampered/photo-tag.data.enc",
+      "folder" : false,
+      "kind" : "singleShot",
+      "seed" : 1
+    },
+    {
+      "chunkSize" : 65536,
+      "count" : 200000,
+      "expect" : "opens",
+      "file" : "video.data.enc",
+      "folder" : false,
+      "kind" : "chunked",
+      "seed" : 2
+    },
+    {
+      "chunkSize" : 65536,
+      "count" : 200000,
+      "expect" : "opens",
+      "file" : "video-folder.data.enc",
+      "folder" : true,
+      "kind" : "chunked",
+      "seed" : 2
+    },
+    {
+      "chunkSize" : 65536,
+      "count" : 131072,
+      "expect" : "opens",
+      "file" : "video-boundary.data.enc",
+      "folder" : false,
+      "kind" : "chunked",
+      "seed" : 3
+    },
+    {
+      "chunkSize" : 65536,
+      "count" : 0,
+      "expect" : "opens",
+      "file" : "video-empty.data.enc",
+      "folder" : false,
+      "kind" : "chunked",
+      "seed" : 4
+    },
+    {
+      "chunkSize" : 4096,
+      "count" : 10000,
+      "expect" : "opens",
+      "file" : "video-small-chunks.data.enc",
+      "folder" : true,
+      "kind" : "chunked",
+      "seed" : 5
+    },
+    {
+      "chunkSize" : 65536,
+      "count" : 200000,
+      "expect" : "chunkNonceMismatch",
+      "file" : "tampered/video-swapped.data.enc",
+      "folder" : false,
+      "kind" : "chunked",
+      "seed" : 2
+    },
+    {
+      "chunkSize" : 65536,
+      "count" : 200000,
+      "expect" : "chunkedFileSizeMismatch",
+      "file" : "tampered/video-truncated.data.enc",
+      "folder" : false,
+      "kind" : "chunked",
+      "seed" : 2
+    },
+    {
+      "chunkSize" : 65536,
+      "count" : 200000,
+      "expect" : "authenticationFailed",
+      "file" : "tampered/video-flipped.data.enc",
+      "folder" : false,
+      "kind" : "chunked",
+      "seed" : 2
+    },
+    {
+      "chunkSize" : 65536,
+      "count" : 200000,
+      "expect" : "invalidChunkedHeader",
+      "file" : "tampered/video-hostile-length.data.enc",
+      "folder" : false,
+      "kind" : "chunked",
+      "seed" : 2
+    },
+    {
+      "databaseSha256" : "79be5eb3e14c2bb434f859f442dfb112987824a0d878253c33e44453f3c28cbc",
+      "expect" : "opens",
+      "file" : "export.obscura",
+      "kind" : "export",
+      "media" : [
+        {
+          "dataSha256" : "7c7e583c13465f6b494d07baf9892786d1bf307e32cd7a851e9b265a3df6516a",
+          "id" : "A3E42A38-8C9A-483D-BAE4-1AEE61FF133A",
+          "thumbSha256" : "ca22e9c5fd1fcd1ae3d7bc3ff7e753560d6be271674db9bcfd172d72fbdc2aac"
+        },
+        {
+          "dataSha256" : "bbefa1ba824ce4ffec543cdb9a7fe3aae0e25442fd193ce0eb1723b8255d2e1a",
+          "id" : "B73D3715-51FA-4CFD-81F8-863C3D37D73F",
+          "thumbSha256" : "eeb215217f97748b0f7ad35f35bd4ecafb2434183ecda04d36df9f39a03eabd3"
+        },
+        {
+          "dataSha256" : "503c73f1e6d460f9f1b39069d83d7520c49bfc55b7397737b4a0197a16d85abd",
+          "id" : "919120EA-50E6-417C-8F1A-714F5A286E56",
+          "thumbSha256" : "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "databaseSha256" : "79be5eb3e14c2bb434f859f442dfb112987824a0d878253c33e44453f3c28cbc",
+      "expect" : "wrongPassword",
+      "file" : "export.obscura",
+      "kind" : "export",
+      "media" : [
+        {
+          "dataSha256" : "7c7e583c13465f6b494d07baf9892786d1bf307e32cd7a851e9b265a3df6516a",
+          "id" : "A3E42A38-8C9A-483D-BAE4-1AEE61FF133A",
+          "thumbSha256" : "ca22e9c5fd1fcd1ae3d7bc3ff7e753560d6be271674db9bcfd172d72fbdc2aac"
+        },
+        {
+          "dataSha256" : "bbefa1ba824ce4ffec543cdb9a7fe3aae0e25442fd193ce0eb1723b8255d2e1a",
+          "id" : "B73D3715-51FA-4CFD-81F8-863C3D37D73F",
+          "thumbSha256" : "eeb215217f97748b0f7ad35f35bd4ecafb2434183ecda04d36df9f39a03eabd3"
+        },
+        {
+          "dataSha256" : "503c73f1e6d460f9f1b39069d83d7520c49bfc55b7397737b4a0197a16d85abd",
+          "id" : "919120EA-50E6-417C-8F1A-714F5A286E56",
+          "thumbSha256" : "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "password" : "not the password"
+    },
+    {
+      "databaseSha256" : "79be5eb3e14c2bb434f859f442dfb112987824a0d878253c33e44453f3c28cbc",
+      "expect" : "authenticationFailed",
+      "file" : "tampered/export-flipped.obscura",
+      "kind" : "export",
+      "media" : [
+        {
+          "dataSha256" : "7c7e583c13465f6b494d07baf9892786d1bf307e32cd7a851e9b265a3df6516a",
+          "id" : "A3E42A38-8C9A-483D-BAE4-1AEE61FF133A",
+          "thumbSha256" : "ca22e9c5fd1fcd1ae3d7bc3ff7e753560d6be271674db9bcfd172d72fbdc2aac"
+        },
+        {
+          "dataSha256" : "bbefa1ba824ce4ffec543cdb9a7fe3aae0e25442fd193ce0eb1723b8255d2e1a",
+          "id" : "B73D3715-51FA-4CFD-81F8-863C3D37D73F",
+          "thumbSha256" : "eeb215217f97748b0f7ad35f35bd4ecafb2434183ecda04d36df9f39a03eabd3"
+        },
+        {
+          "dataSha256" : "503c73f1e6d460f9f1b39069d83d7520c49bfc55b7397737b4a0197a16d85abd",
+          "id" : "919120EA-50E6-417C-8F1A-714F5A286E56",
+          "thumbSha256" : "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "databaseSha256" : "79be5eb3e14c2bb434f859f442dfb112987824a0d878253c33e44453f3c28cbc",
+      "expect" : "invalidExport",
+      "file" : "tampered/export-truncated.obscura",
+      "kind" : "export",
+      "media" : [
+        {
+          "dataSha256" : "7c7e583c13465f6b494d07baf9892786d1bf307e32cd7a851e9b265a3df6516a",
+          "id" : "A3E42A38-8C9A-483D-BAE4-1AEE61FF133A",
+          "thumbSha256" : "ca22e9c5fd1fcd1ae3d7bc3ff7e753560d6be271674db9bcfd172d72fbdc2aac"
+        },
+        {
+          "dataSha256" : "bbefa1ba824ce4ffec543cdb9a7fe3aae0e25442fd193ce0eb1723b8255d2e1a",
+          "id" : "B73D3715-51FA-4CFD-81F8-863C3D37D73F",
+          "thumbSha256" : "eeb215217f97748b0f7ad35f35bd4ecafb2434183ecda04d36df9f39a03eabd3"
+        },
+        {
+          "dataSha256" : "503c73f1e6d460f9f1b39069d83d7520c49bfc55b7397737b4a0197a16d85abd",
+          "id" : "919120EA-50E6-417C-8F1A-714F5A286E56",
+          "thumbSha256" : "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    }
+  ],
+  "databaseSize" : 7654321,
+  "folder" : {
+    "folderKeyEncrypted" : "TppOKegJi1A5VM02cFYTqV2lg64NsbjiI3Ms0qfVSvUXx9RjGdGvEYsHTCbKRX8wPOVKcY9DYiLw9BD3",
+    "passwordHash" : "IosBdIZiOrr8BMnUGcht9awT1suIxJin2j+3HutjsSo=",
+    "passwordSalt" : "m1zBvb/M75sEaHDh9NAMmzG252aTzq32ufOzzv4+m6E="
+  },
+  "folderKeyFingerprint" : "6fd2d71fcca765dd",
+  "folderPassword" : "swift folder pass 1",
+  "format" : 1,
+  "generatedBy" : "ObscuraCrypto Swift 1.1.0",
+  "masterKeyFingerprint" : "13f86585eab53def",
+  "vaultPassword" : "swift p\u00e4ssword \ud83d\udd10"
+}

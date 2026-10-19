@@ -15,6 +15,8 @@ The app keeps your photos and videos in encrypted vaults, each opened by its own
 
 Obscura Photo Vault uses this package for all of the above from version 1.14.0, and the tests below open files the app itself wrote. Everything else stays inside the app and is not part of this package: the screens, the database of folders and photo details, how the app manages its vault slots, Face ID, and the app's behaviour while it runs. The [security paper](https://obscura-vault.com/security) describes those parts.
 
+The same encryption is also written in Kotlin, in the `kotlin/` folder, for an Android version of the app. It follows the same written description of the formats ([FORMATS.md](FORMATS.md)), and both versions are tested against the same files: the ones the iPhone app wrote, and sets each version wrote for the other, including damaged ones that both must refuse. A vault exported on an iPhone opens with the Kotlin library, and the reverse. Nothing ships in an Android app yet.
+
 There is also a small command-line tool, `obscura`, that works with the same files: you can create a test vault, encrypt and decrypt files, and get your photos back out of a backup.
 
 ## Getting started
