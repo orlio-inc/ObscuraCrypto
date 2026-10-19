@@ -66,6 +66,16 @@ You should see a `data` folder of vault files named `<id>.db.enc` and a `media` 
 
 You may also see two more folders. `snapshots` is the app's on-device backup history: each snapshot is a dated copy of the vault files from `data`, kept so a vault can be rolled back. Its files have the same structure as those in `data`, and every check below applies to them too. `staging` is a short-lived working area used while a backup is being restored, and is normally empty. Neither holds anything unencrypted.
 
+### On Android
+
+The Android app keeps its files in a private folder too, and an unrooted phone cannot copy them out. The app's own **Backup to Folder** does it for you: in Settings (or from the settings behind the gear on the login screen), choose **Backup to Folder**, pick a folder, and tap **Back Up Now**. It copies the app's files, byte for byte and still encrypted, into a folder called `Obscura Backup`:
+
+- `data/` holds the vault files, `<id>.db.enc`, all ten or more of them, placeholders included;
+- `media/` holds `<id>.data.enc` and `<id>.thumb.enc`;
+- `manifest.txt` is a list of SHA-256 fingerprints of the vault files, used to tell what changed. It holds no key and no password.
+
+Choose a folder on the phone's own storage, connect the phone to your computer, and copy `Obscura Backup` to it (with Android File Transfer, or `adb pull`). Then carry on from section 3 in that folder: its `data` and `media` are the same `data` and `media` the iPhone steps above end with. The app's version and the file formats are the same on both phones, so the same checks apply; the files simply came out by a different door.
+
 ## 3. Check the vault files
 
 **Every vault file has the same structure.** The app keeps at least 10 vault files whether you use them or not, and the unused ones are built exactly like real ones.
