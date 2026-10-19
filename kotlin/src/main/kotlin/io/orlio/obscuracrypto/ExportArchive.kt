@@ -215,8 +215,15 @@ class ExportArchive private constructor(
     private val input: PushbackInputStream,
     val header: ExportHeader,
     val index: ExportIndex,
+    manifest: ByteArray,
     private val key: SecretKeySpec,
 ) : Closeable {
+
+    /**
+     * The manifest JSON exactly as it was written, for the parts this library does
+     * not read: the app's description of folders and photos.
+     */
+    val manifestBytes: ByteArray = manifest.copyOf()
 
     private var counter = 1L
 
@@ -317,7 +324,7 @@ class ExportArchive private constructor(
 
                 val manifest = readRecord(input, key, header.nonce(0), MAXIMUM_MANIFEST_SIZE)
                     ?: throw ObscuraCryptoException.InvalidExport("no manifest")
-                return ExportArchive(input, header, ExportIndex.parse(manifest), key)
+                return ExportArchive(input, header, ExportIndex.parse(manifest), manifest, key)
             } catch (e: Throwable) {
                 input.close()
                 throw e
