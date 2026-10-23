@@ -104,6 +104,26 @@ class VaultAndExportTest : CryptoTestCase() {
     }
 
     @Test
+    fun extractionRefusesALinkAtTheName() {
+        val target = File(directory, "elsewhere")
+        java.nio.file.Files.createSymbolicLink(File(directory, "$photo.jpg").toPath(), target.toPath())
+        assertRefused<ObscuraCryptoException.InvalidExport> {
+            MediaExtraction.extract(stored(photo), photo, masterKey(), directory = directory)
+        }
+        assertFalse(target.exists())
+    }
+
+    @Test
+    fun extractedFilesAreReadableByTheirOwnerOnly() {
+        val outcome = MediaExtraction.extract(stored(video), video, masterKey(), directory = directory)
+        val file = assertIs<MediaExtraction.Outcome.Extracted>(outcome).file
+        assertEquals(
+            "rw-------",
+            java.nio.file.attribute.PosixFilePermissions.toString(java.nio.file.Files.getPosixFilePermissions(file.toPath())),
+        )
+    }
+
+    @Test
     fun fileTypesComeFromTheBytesNotTheName() {
         fun ext(vararg bytes: Int) = MediaExtraction.fileExtension(ByteArray(bytes.size) { bytes[it].toByte() })
         assertEquals("jpg", ext(0xFF, 0xD8, 0xFF, 0xE0))

@@ -9,6 +9,7 @@ import java.io.OutputStream
 import java.io.RandomAccessFile
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
+import java.nio.file.attribute.PosixFilePermissions
 import java.util.UUID
 import javax.crypto.spec.SecretKeySpec
 
@@ -398,7 +399,7 @@ class ChunkedMediaReader(val file: File) {
         folderKey: SecureBytes? = null,
         progress: ((chunksDone: Long, chunkCount: Long) -> Unit)? = null,
     ) {
-        val temporary = temporaryFile(destination)
+        val temporary = privateTemporaryFile(destination)
         try {
             temporary.outputStream().use { output ->
                 decrypt(output, masterKey, folderKey, progress)
@@ -453,6 +454,21 @@ private fun RandomAccessFile.readAtMost(buffer: ByteArray): Int {
 
 internal fun temporaryFile(destination: File): File =
     File(destination.absoluteFile.parentFile, ".${destination.name}.${UUID.randomUUID()}.partial")
+
+/**
+ * A temporary file for decrypted bytes, made readable by its owner only before
+ * anything is written to it. Where the file system has no owner permissions the
+ * file is still created.
+ */
+internal fun privateTemporaryFile(destination: File): File {
+    val file = temporaryFile(destination)
+    try {
+        Files.createFile(file.toPath(), PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-------")))
+    } catch (e: UnsupportedOperationException) {
+        file.createNewFile()
+    }
+    return file
+}
 
 /**
  * Moves a finished temporary file to [destination], replacing a file already

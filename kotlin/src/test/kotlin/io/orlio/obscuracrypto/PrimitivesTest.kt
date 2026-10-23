@@ -77,23 +77,43 @@ class PrimitivesTest : CryptoTestCase() {
         assertTrue(empty.contentEquals(zero))
     }
 
+    @OptIn(KeyDerivation.TestingOnly::class)
     @Test
     fun anInstalledImplementationIsUsedByEveryDerivation() {
-        val original = KeyDerivation.implementation
         try {
             var calls = 0
-            KeyDerivation.implementation = KeyDerivation.Pbkdf2Function { password, salt, rounds ->
+            KeyDerivation.overrideForTesting { password, salt, rounds ->
                 calls += 1
-                Pbkdf2.derive(password, salt, rounds, Pbkdf2.Engine.KOTLIN)
+                Pbkdf2InKotlin.derive(password, salt, rounds)
             }
             val header = VaultHeader.create("secret password", 1).header
             header.unlock("secret password")
             KeyDerivation.pbkdf2SHA256("x", ByteArray(32), 5)
             assertEquals(3, calls)
-            KeyDerivation.implementation = KeyDerivation.Pbkdf2Function { _, _, _ -> ByteArray(31) }
+            KeyDerivation.overrideForTesting { _, _, _ -> ByteArray(31) }
             assertFailsWith<ObscuraCryptoException.KeyDerivationFailed> { KeyDerivation.pbkdf2SHA256("x", ByteArray(32), 5) }
         } finally {
-            KeyDerivation.implementation = original
+            KeyDerivation.overrideForTesting(null)
+        }
+    }
+
+    @OptIn(KeyDerivation.TestingOnly::class)
+    @Test
+    fun installingIsSetOnceAndRefusedAfterUse() {
+        try {
+            KeyDerivation.overrideForTesting(null)
+            val first = KeyDerivation.Pbkdf2Function { password, salt, rounds -> Pbkdf2.derive(password, salt, rounds) }
+            KeyDerivation.install(first)
+            KeyDerivation.install(first) // the same function again is fine
+            assertFailsWith<IllegalStateException> {
+                KeyDerivation.install(KeyDerivation.Pbkdf2Function { password, salt, rounds -> Pbkdf2.derive(password, salt, rounds) })
+            }
+
+            KeyDerivation.overrideForTesting(null)
+            KeyDerivation.pbkdf2SHA256("x", ByteArray(32), 5)
+            assertFailsWith<IllegalStateException> { KeyDerivation.install(first) }
+        } finally {
+            KeyDerivation.overrideForTesting(null)
         }
     }
 

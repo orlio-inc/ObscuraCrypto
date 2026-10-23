@@ -45,7 +45,7 @@ object KeyDerivation {
      */
     fun pbkdf2SHA256(passwordBytes: ByteArray, salt: ByteArray, iterations: Int): SecureBytes {
         if (iterations <= 0) throw ObscuraCryptoException.KeyDerivationFailed()
-        val derived = implementation.derive(passwordBytes, salt, iterations)
+        val derived = active().derive(passwordBytes, salt, iterations)
         try {
             if (derived.size != KEY_LENGTH) throw ObscuraCryptoException.KeyDerivationFailed()
             return SecureBytes.copying(derived)
@@ -65,9 +65,46 @@ object KeyDerivation {
         fun derive(passwordBytes: ByteArray, salt: ByteArray, iterations: Int): ByteArray
     }
 
-    /** Set once, before the first derivation. */
-    @Volatile
-    var implementation: Pbkdf2Function = Pbkdf2Function { password, salt, rounds -> Pbkdf2.derive(password, salt, rounds) }
+    private val builtIn = Pbkdf2Function { password, salt, rounds -> Pbkdf2.derive(password, salt, rounds) }
+
+    private val lock = Any()
+    private var installed: Pbkdf2Function? = null
+    private var used = false
+
+    /**
+     * Replaces the key derivation, once. Installing the same function again is
+     * allowed; a different one, or any install after the first derivation, is
+     * refused, so nothing can swap in a weaker derivation while vaults are open.
+     */
+    fun install(function: Pbkdf2Function) {
+        synchronized(lock) {
+            check(installed == null || installed === function) { "A different key derivation is already installed" }
+            check(installed != null || !used) { "Key derivation was already used; install before the first vault is opened" }
+            installed = function
+        }
+    }
+
+    private fun active(): Pbkdf2Function = synchronized(lock) {
+        used = true
+        installed ?: builtIn
+    }
+
+    /** Marks the functions that exist only for a project's own tests. */
+    @RequiresOptIn("For tests only: replaces the key derivation without the set-once checks.", RequiresOptIn.Level.ERROR)
+    annotation class TestingOnly
+
+    /** The derivation in use, for a test that wraps it. */
+    @TestingOnly
+    fun currentForTesting(): Pbkdf2Function = synchronized(lock) { installed ?: builtIn }
+
+    /** Swaps the derivation with no checks and forgets that one was used; `null` restores the library's own. */
+    @TestingOnly
+    fun overrideForTesting(function: Pbkdf2Function?) {
+        synchronized(lock) {
+            installed = function
+            used = false
+        }
+    }
 
     /** A fresh random 32-byte salt. */
     fun makeSalt(): ByteArray = Random.bytes(SALT_LENGTH)

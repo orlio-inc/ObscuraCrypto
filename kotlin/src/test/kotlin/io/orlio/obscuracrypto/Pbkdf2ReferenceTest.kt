@@ -8,9 +8,9 @@ import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 
 /**
- * The hand-written SHA-256 inside [Pbkdf2], held against the platform's HMAC:
+ * The hand-written SHA-256 in [Pbkdf2InKotlin], held against the platform's HMAC:
  * the same PBKDF2 written the obvious way, a `Mac` in a loop. Also published
- * vectors through the Kotlin core, so it does not rest on the other engine.
+ * vectors through that implementation, so it does not rest on the shipped loop.
  */
 class Pbkdf2ReferenceTest : CryptoTestCase() {
 
@@ -23,8 +23,8 @@ class Pbkdf2ReferenceTest : CryptoTestCase() {
                     val password = randomBytes(passwordLength)
                     val salt = randomBytes(saltLength)
                     assertContentEquals(
-                        Pbkdf2.derive(password, salt, iterations, Pbkdf2.Engine.MAC),
-                        Pbkdf2.derive(password, salt, iterations, Pbkdf2.Engine.KOTLIN),
+                        Pbkdf2.derive(password, salt, iterations),
+                        Pbkdf2InKotlin.derive(password, salt, iterations),
                         "password $passwordLength bytes, salt $saltLength bytes, $iterations rounds",
                     )
                 }
@@ -35,7 +35,7 @@ class Pbkdf2ReferenceTest : CryptoTestCase() {
     @Test
     fun kotlinCoreMatchesThePublishedVectors() {
         fun derive(password: String, rounds: Int) = Fixtures.hex(
-            Pbkdf2.derive(password.toByteArray(), "salt".toByteArray(), rounds, Pbkdf2.Engine.KOTLIN)
+            Pbkdf2InKotlin.derive(password.toByteArray(), "salt".toByteArray(), rounds)
         )
         assertEquals("120fb6cffcf8b32c43e7225256c4f837a86548c92ccc35480805987cb70be17b", derive("password", 1))
         assertEquals("ae4d0c95af6b46d32d0adff928f06dd02a303f8ef3c251dfd6e2d85a95474c43", derive("password", 2))
@@ -48,8 +48,8 @@ class Pbkdf2ReferenceTest : CryptoTestCase() {
         val password = "correct horse battery staple".toByteArray()
         val salt = randomBytes(32)
         assertContentEquals(
-            Pbkdf2.derive(password, salt, KeyDerivation.VAULT_ITERATIONS, Pbkdf2.Engine.MAC),
-            Pbkdf2.derive(password, salt, KeyDerivation.VAULT_ITERATIONS, Pbkdf2.Engine.KOTLIN),
+            Pbkdf2.derive(password, salt, KeyDerivation.VAULT_ITERATIONS),
+            Pbkdf2InKotlin.derive(password, salt, KeyDerivation.VAULT_ITERATIONS),
         )
     }
 }

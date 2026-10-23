@@ -21,8 +21,9 @@ class BenchmarkTest : CryptoTestCase() {
         val provider = TestProvider.activeAesProvider()
 
         val password = "correct horse battery staple".toByteArray()
-        for (engine in Pbkdf2.Engine.entries) {
-            fun oneDerivation() = Pbkdf2.derive(password, salt, KeyDerivation.VAULT_ITERATIONS, engine)
+        for (engine in listOf("MAC", "KOTLIN")) {
+            fun oneDerivation() = if (engine == "MAC") Pbkdf2.derive(password, salt, KeyDerivation.VAULT_ITERATIONS)
+                else Pbkdf2InKotlin.derive(password, salt, KeyDerivation.VAULT_ITERATIONS)
             oneDerivation() // warm up the JIT
             val single = (1..5).map { time { oneDerivation() } }.sorted()
             println("BENCH provider=$provider engine=$engine one derivation: median ${single[2]} ms, best ${single[0]} ms")

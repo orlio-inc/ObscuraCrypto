@@ -6,7 +6,7 @@ package io.orlio.obscuracrypto
 import java.io.File
 import java.io.RandomAccessFile
 import java.nio.file.Files
-import java.util.UUID
+import java.nio.file.LinkOption
 
 /** Turns stored media files back into ordinary photos and videos. */
 object MediaExtraction {
@@ -39,7 +39,7 @@ object MediaExtraction {
         directory: File,
     ): Outcome {
         if (!isCanonicalUuid(id)) throw ObscuraCryptoException.InvalidExport("$id is not a media ID")
-        val temporary = File(directory, ".$id.${UUID.randomUUID()}.partial")
+        val temporary = privateTemporaryFile(File(directory, id))
         try {
             val prefix = readPrefix(storedFile, 4)
             try {
@@ -54,7 +54,8 @@ object MediaExtraction {
             }
 
             val destination = File(directory, "$id.${fileExtension(readPrefix(temporary, 16))}")
-            if (destination.exists()) {
+            // A link at this name, even a dangling one, counts as taken.
+            if (Files.exists(destination.toPath(), LinkOption.NOFOLLOW_LINKS)) {
                 throw ObscuraCryptoException.InvalidExport("${destination.name} already exists")
             }
             Files.move(temporary.toPath(), destination.toPath())
