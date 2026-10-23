@@ -117,9 +117,9 @@ Use a long passphrase. There is no password recovery: we cannot reset it, and ne
 
 **PBKDF2 is not the strongest option available.** Newer methods such as Argon2 make guessing on graphics cards much more expensive, by also requiring lots of memory. PBKDF2 was chosen because it is built into Apple's platforms and meets current guidance. The file format has room for a stronger method later, without breaking existing vaults.
 
-**Very large video libraries carry a small, known risk.** Each video gets a random 4-byte tag that keeps it apart from every other video under the same key. Two videos sharing a tag is very unlikely in a normal library: about 1 in 35,000 with 500 videos, rising to about 1 in 90 with 10,000. If it happened, someone with both files could learn something about those two videos, but could not open the vault or any other file. A future version of the format will remove this.
+**Very large video libraries carry a small, known risk.** Each video gets a random 4-byte tag that keeps it apart from every other video under the same key. Two videos sharing a tag is very unlikely in a normal library: about 1 in 35,000 with 500 videos, rising to about 1 in 90 with 10,000. If it happened, someone holding both files could learn how the matching parts of those two videos differ from each other, and could replace those parts with content of their own without the app noticing. They could not open the vault, read anything else, or change any other file. A future version of the format will remove this.
 
-**File headers are not sealed.** Someone who can change files on your phone could cut a video short or swap two of your files around. They could not read anything, or slip in content of their own.
+**File headers are not sealed.** The content of each part of a file is authenticated, but the header that says how long the file is, and how it is divided, is not. Someone who can change files on your phone could cut a video short, or swap two of your files around, and the app would not necessarily notice. Apart from the collision above, they cannot read anything or put content of their own inside a file.
 
 **Type accented passwords the same way.** A password is used exactly as typed, so the same accented letter entered differently on two keyboards would count as a different password.
 

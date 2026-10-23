@@ -108,6 +108,27 @@ final class VaultAndExportTests: XCTestCase {
             storedFile: stored(manifest.photo), id: "../escape", masterKey: masterKey(manifest), into: directory))
     }
 
+    /// A link planted at the file's name, even one pointing nowhere, counts as taken.
+    func testExtractionRefusesALinkAtTheName() throws {
+        let manifest = try manifest()
+        let target = directory.appendingPathComponent("elsewhere")
+        try FileManager.default.createSymbolicLink(
+            at: directory.appendingPathComponent("\(manifest.photo).jpg"), withDestinationURL: target)
+        XCTAssertThrowsError(try MediaExtraction.extract(
+            storedFile: stored(manifest.photo), id: manifest.photo, masterKey: masterKey(manifest), into: directory))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: target.path))
+    }
+
+    func testExtractedFilesAreReadableByTheirOwnerOnly() throws {
+        let manifest = try manifest()
+        guard case .extracted(let file) = try MediaExtraction.extract(
+            storedFile: stored(manifest.video), id: manifest.video, masterKey: masterKey(manifest), into: directory) else {
+            return XCTFail("video not extracted")
+        }
+        let mode = try FileManager.default.attributesOfItem(atPath: file.path)[.posixPermissions] as? Int
+        XCTAssertEqual(mode, 0o600)
+    }
+
     // MARK: - Export
 
     func testExportUnpacksToTheSameFilesAndKey() throws {

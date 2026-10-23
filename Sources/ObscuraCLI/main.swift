@@ -239,8 +239,14 @@ func run(_ raw: [String]) throws {
 
         try archive.skipDatabase()
         var extracted = 0, layered = 0
+        // Each stored file is staged in a folder made fresh for this run, owner-only,
+        // so a name someone planted in out-dir (a link, say) is never written through.
+        let staging = outDir.appendingPathComponent(".obscura-staging-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: staging, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+        defer { try? FileManager.default.removeItem(at: staging) }
         for media in archive.index.mediaFiles {
-            let stored = outDir.appendingPathComponent(".\(media.id).stored")
+            let stored = staging.appendingPathComponent("\(media.id).stored")
             defer { try? FileManager.default.removeItem(at: stored) }
             try archive.copyStoredFile(size: media.dataSize, to: stored)
             try archive.copyStoredFile(size: media.thumbnailSize, to: nil)

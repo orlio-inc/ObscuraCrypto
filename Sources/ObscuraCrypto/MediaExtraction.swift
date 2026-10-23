@@ -19,8 +19,8 @@ public enum MediaExtraction {
     /// decrypted bytes actually are.
     ///
     /// `id` becomes a file name, so it must be a UUID; anything else is
-    /// refused. Never overwrites: a name already taken in `directory` is an
-    /// error. Writes through a temporary file, so a failure leaves nothing.
+    /// refused. Never overwrites: a name already taken in `directory` (a link
+    /// included) is an error. The result is readable by its owner only. Writes through a temporary file, so a failure leaves nothing.
     public static func extract(
         storedFile: URL,
         id: String,
@@ -33,6 +33,8 @@ public enum MediaExtraction {
         }
         let temporary = directory.appendingPathComponent(".\(id).\(UUID().uuidString).partial")
         defer { try? FileManager.default.removeItem(at: temporary) }
+        // The decrypted file is private from its first byte: only its owner can read it.
+        FileManager.default.createFile(atPath: temporary.path, contents: nil, attributes: [.posixPermissions: 0o600])
 
         let prefix = try FileHandle(forReadingFrom: storedFile).read(upToCount: 4) ?? Data()
         do {
@@ -49,7 +51,9 @@ public enum MediaExtraction {
 
         let head = try FileHandle(forReadingFrom: temporary).read(upToCount: 16) ?? Data()
         let destination = directory.appendingPathComponent("\(id).\(fileExtension(for: head))")
-        guard !FileManager.default.fileExists(atPath: destination.path) else {
+        // `attributesOfItem` does not follow links, so a symlink planted at this
+        // name, even a dangling one, counts as taken.
+        guard (try? FileManager.default.attributesOfItem(atPath: destination.path)) == nil else {
             throw ObscuraCryptoError.invalidExport("\(destination.lastPathComponent) already exists")
         }
         try FileManager.default.moveItem(at: temporary, to: destination)

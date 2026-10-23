@@ -373,7 +373,8 @@ public struct ChunkedMediaReader: Sendable {
         let cipher = try ChunkedMediaCipher(header: header, masterKey: masterKey, folderKey: folderKey)
         let temporary = destination.deletingLastPathComponent()
             .appendingPathComponent(".\(destination.lastPathComponent).\(UUID().uuidString).partial")
-        FileManager.default.createFile(atPath: temporary.path, contents: nil)
+        FileManager.default.createFile(
+            atPath: temporary.path, contents: nil, attributes: [.posixPermissions: 0o600])
         do {
             let input = try FileHandle(forReadingFrom: url)
             let output = try FileHandle(forWritingTo: temporary)
