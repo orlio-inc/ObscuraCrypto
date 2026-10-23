@@ -27,6 +27,17 @@ export PATH="$PWD/.build/release:$PATH"
 
 `swift test` runs the whole suite. `AppCompatibilityTests` is the part that matters here: it decrypts a vault header and media files that the app's own code wrote (in `Tests/ObscuraCryptoTests/Fixtures`, with their passwords in `manifest.json`), and rewrites the app's header byte for byte. The rest checks the primitives against published test vectors and the formats against their documented layouts.
 
+**No Mac?** The same `obscura` commands exist in Kotlin, for any computer with a JDK 21 (Windows, Linux or macOS). It reads and writes the same files, and every command in this guide works the same with it:
+
+```sh
+git clone <this repository>
+cd ObscuraCrypto/kotlin
+./gradlew check :cli:installDist
+export PATH="$PWD/cli/build.nosync/install/obscura/bin:$PATH"
+```
+
+On Windows use `gradlew.bat` and `obscura.bat`. `kotlin/cli/cross-check.sh` runs both tools on the same files and fails if their output or decrypted bytes differ.
+
 Read the code while you are at it. Everything that touches a key is in `Sources/ObscuraCrypto`, with no dependencies beyond Apple's CryptoKit, CommonCrypto and Security frameworks.
 
 ## 2. Get your vault files off the phone

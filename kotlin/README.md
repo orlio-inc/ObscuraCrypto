@@ -21,6 +21,20 @@ with Conscrypt first, the BoringSSL-based provider Android ships. It needs JDK
 `../Tests/ObscuraCryptoTests/Fixtures`: the ones the iOS app wrote, and the sets
 each language of this repository wrote for the other (see FORMATS.md).
 
+## Command line
+
+`cli/` is the `obscura` tool of the Swift package for any computer with JDK 21:
+the same commands (`vault`, `media`, `folder`, `export`), the same output, and
+files that open in either. See [VERIFYING.md](../VERIFYING.md).
+
+```sh
+./gradlew :cli:installDist
+cli/build.nosync/install/obscura/bin/obscura vault inspect <file>
+```
+
+On a Mac with Swift, `cli/cross-check.sh` runs both tools on the same files and
+fails if they disagree.
+
 Licence: GPL-3.0-or-later, as the Swift package.
 
 ## What Kotlin cannot promise
