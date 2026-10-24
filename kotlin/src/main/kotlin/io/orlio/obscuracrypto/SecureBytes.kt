@@ -13,6 +13,11 @@ import javax.crypto.spec.SecretKeySpec
  * Held in one array this class owns and never copies. Close it as soon as the
  * key is no longer needed; it is also zeroed by [clear].
  *
+ * A closed key refuses to be used: reading it throws
+ * [ObscuraCryptoException.KeyCleared]. Zeroed bytes are a perfectly good AES
+ * key, so without that refusal a seal made after the key was closed would
+ * succeed, under a key anyone can guess.
+ *
  * This is weaker than the Swift package's `SecureBytes`, and says so: the JVM
  * gives no promise that the garbage collector has not moved the array before
  * it is zeroed, and the JCA copies a key into its own cipher state, which this
@@ -21,19 +26,31 @@ import javax.crypto.spec.SecretKeySpec
  */
 class SecureBytes private constructor(private val buffer: ByteArray) : AutoCloseable {
 
+    @Volatile
+    private var cleared = false
+
     val count: Int get() = buffer.size
+
+    /** Whether [clear] or [close] has run. A cleared key cannot be used again. */
+    val isCleared: Boolean get() = cleared
+
+    private fun live(): ByteArray {
+        if (cleared) throw ObscuraCryptoException.KeyCleared()
+        return buffer
+    }
 
     /** Zero-filled bytes of the given length. */
     constructor(count: Int) : this(ByteArray(count).also { require(count >= 0) })
 
     /** Runs [body] with the key bytes. [body] must not keep a reference to the array. */
-    fun <R> withBytes(body: (ByteArray) -> R): R = body(buffer)
+    fun <R> withBytes(body: (ByteArray) -> R): R = body(live())
 
     /** A copy of the bytes. The caller owns it and should zero it after use. */
-    fun toByteArray(): ByteArray = buffer.copyOf()
+    fun toByteArray(): ByteArray = live().copyOf()
 
     /** Overwrites the bytes with zeros. */
     fun clear() {
+        cleared = true
         buffer.fill(0)
     }
 
@@ -46,13 +63,13 @@ class SecureBytes private constructor(private val buffer: ByteArray) : AutoClose
      * key, but it lets two tools confirm they unwrapped the same one.
      */
     val fingerprint: String
-        get() = MessageDigest.getInstance("SHA-256").digest(buffer)
+        get() = MessageDigest.getInstance("SHA-256").digest(live())
             .take(8).joinToString("") { "%02x".format(it) }
 
     /** Constant-time comparison, so it does not leak where two keys first differ. */
-    fun contentEquals(other: SecureBytes): Boolean = constantTimeEquals(buffer, other.buffer)
+    fun contentEquals(other: SecureBytes): Boolean = constantTimeEquals(live(), other.live())
 
-    internal fun secretKey(algorithm: String = "AES"): SecretKeySpec = SecretKeySpec(buffer, algorithm)
+    internal fun secretKey(algorithm: String = "AES"): SecretKeySpec = SecretKeySpec(live(), algorithm)
 
     companion object {
         /** A copy of `bytes[offset until offset + length]`. The caller keeps its own copy. */

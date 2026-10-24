@@ -189,8 +189,9 @@ class PrimitivesTest : CryptoTestCase() {
     @Test
     fun clearZeroesTheBytes() {
         val key = randomKey()
+        val buffer = key.withBytes { it }
         key.clear()
-        assertTrue(key.withBytes { bytes -> bytes.all { it == 0.toByte() } })
+        assertTrue(buffer.all { it == 0.toByte() })
     }
 
     @Test

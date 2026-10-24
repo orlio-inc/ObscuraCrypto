@@ -57,4 +57,25 @@ class CliTest {
             target.delete()
         }
     }
+
+    @Test
+    fun decryptedSingleShotMediaIsReadableByItsOwnerOnly() {
+        val directory = java.nio.file.Files.createTempDirectory("obscura-cli").toFile()
+        try {
+            val newVault = File(directory, "v.vault")
+            val plain = File(directory, "photo.bin").also { it.writeBytes(ByteArray(300) { n -> n.toByte() }) }
+            val sealed = File(directory, "photo.enc")
+            val target = File(directory, "photo.out")
+            run("$password\n", "vault", "create", newVault.path, "--password-stdin")
+            run("$password\n", "media", "encrypt", plain.path, sealed.path, "--vault", newVault.path, "--password-stdin")
+            run("$password\n", "media", "decrypt", sealed.path, target.path, "--vault", newVault.path, "--password-stdin")
+            assertTrue(target.readBytes().contentEquals(plain.readBytes()))
+            assertTrue(
+                java.nio.file.Files.getPosixFilePermissions(target.toPath()) ==
+                    java.nio.file.attribute.PosixFilePermissions.fromString("rw-------"),
+            )
+        } finally {
+            directory.deleteRecursively()
+        }
+    }
 }

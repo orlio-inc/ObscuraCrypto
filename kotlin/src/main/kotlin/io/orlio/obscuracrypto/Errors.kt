@@ -12,6 +12,9 @@ sealed class ObscuraCryptoException(message: String) : Exception(message) {
 
     class KeyDerivationFailed : ObscuraCryptoException("Key derivation failed")
 
+    /** A key was used after it was cleared, which would otherwise mean using zeros. */
+    class KeyCleared : ObscuraCryptoException("The key has been cleared and cannot be used")
+
     /** A key was not the 32 bytes AES-256 needs. */
     class InvalidKeyLength(val length: Int) :
         ObscuraCryptoException("Expected a 32-byte key, got $length bytes")

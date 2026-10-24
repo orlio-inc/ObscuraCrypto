@@ -11,7 +11,6 @@ import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.nio.file.attribute.PosixFilePermissions
 import java.util.UUID
-import javax.crypto.spec.SecretKeySpec
 
 /**
  * The 25-byte header of a chunked media file.
@@ -188,8 +187,8 @@ class ChunkedMediaCipher(
     masterKey: SecureBytes,
     folderKey: SecureBytes? = null,
 ) {
-    private val master: SecretKeySpec
-    private val folder: SecretKeySpec?
+    private val master: SecureBytes
+    private val folder: SecureBytes?
 
     /**
      * [folderKey] is needed to seal or open a file with a folder layer, and to
@@ -198,8 +197,10 @@ class ChunkedMediaCipher(
     init {
         AesGcm.checkKey(masterKey)
         if (folderKey != null) AesGcm.checkKey(folderKey)
-        master = masterKey.secretKey()
-        folder = folderKey?.secretKey()
+        // Kept as the caller's keys, not copied into key specs: closing a key
+        // then stops this cipher too, and no copy outlives it.
+        master = masterKey
+        folder = folderKey
     }
 
     /**
@@ -255,26 +256,26 @@ class ChunkedMediaCipher(
 
     private fun sealMaster(plaintext: ByteArray, chunk: Long): ByteArray {
         checkIndex(chunk)
-        return AesGcm.seal(plaintext, master, header.masterNonce(chunk))
+        return AesGcm.seal(plaintext, master.secretKey(), header.masterNonce(chunk))
     }
 
     private fun sealFolder(inner: ByteArray, chunk: Long): ByteArray {
         checkIndex(chunk)
         val key = folder ?: throw ObscuraCryptoException.AuthenticationFailed()
-        return AesGcm.seal(inner, key, header.folderNonce(chunk))
+        return AesGcm.seal(inner, key.secretKey(), header.folderNonce(chunk))
     }
 
     private fun openMaster(sealed: ByteArray, chunk: Long): ByteArray {
         checkIndex(chunk)
         if (!hasNonce(sealed, header.masterNonce(chunk))) throw ObscuraCryptoException.ChunkNonceMismatch(chunk)
-        return AesGcm.open(sealed, master)
+        return AesGcm.open(sealed, master.secretKey())
     }
 
     private fun openFolder(stored: ByteArray, chunk: Long): ByteArray {
         checkIndex(chunk)
         val key = folder ?: throw ObscuraCryptoException.AuthenticationFailed()
         if (!hasNonce(stored, header.folderNonce(chunk))) throw ObscuraCryptoException.ChunkNonceMismatch(chunk)
-        return AesGcm.open(stored, key)
+        return AesGcm.open(stored, key.secretKey())
     }
 
     private fun hasNonce(sealed: ByteArray, nonce: ByteArray): Boolean =

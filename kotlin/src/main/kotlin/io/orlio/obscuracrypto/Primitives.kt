@@ -75,12 +75,31 @@ object KeyDerivation {
      * Replaces the key derivation, once. Installing the same function again is
      * allowed; a different one, or any install after the first derivation, is
      * refused, so nothing can swap in a weaker derivation while vaults are open.
+     *
+     * The function is first checked against the library's own on two small
+     * inputs and refused if its answers differ, so a native library that is
+     * broken on some device fails at start-up instead of deriving keys that
+     * open nothing, or the same key for every password.
      */
     fun install(function: Pbkdf2Function) {
         synchronized(lock) {
+            if (installed !== function) checkAgreesWithBuiltIn(function)
             check(installed == null || installed === function) { "A different key derivation is already installed" }
             check(installed != null || !used) { "Key derivation was already used; install before the first vault is opened" }
             installed = function
+        }
+    }
+
+    private fun checkAgreesWithBuiltIn(function: Pbkdf2Function) {
+        val checks = listOf(Triple("password", "NaCl".toByteArray().copyOf(SALT_LENGTH), 1), Triple("Obscura self-test", ByteArray(SALT_LENGTH) { it.toByte() }, 2_048))
+        for ((password, salt, rounds) in checks) {
+            val bytes = password.toByteArray(Charsets.UTF_8)
+            val expected = Pbkdf2.derive(bytes, salt, rounds)
+            val actual = try { function.derive(bytes, salt, rounds) } catch (e: Exception) { null }
+            val agrees = actual != null && constantTimeEquals(expected, actual)
+            expected.fill(0)
+            actual?.fill(0)
+            check(agrees) { "The key derivation to install does not compute PBKDF2-HMAC-SHA256" }
         }
     }
 

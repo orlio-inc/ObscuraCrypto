@@ -212,7 +212,7 @@ internal class Cli(private val raw: List<String>, private val stdin: java.io.Buf
                         out.println("Decrypted ${reader.header.chunkCount} chunks to ${output.path}")
                     }
                     MediaFormat.SINGLE_SHOT -> {
-                        replaceAtomically(output, SingleShotMedia.decrypt(input.readBytes(), masterKey, folderKey))
+                        replaceAtomically(output, SingleShotMedia.decrypt(input.readBytes(), masterKey, folderKey), ownerOnly = true)
                         out.println("Decrypted to ${output.path}")
                     }
                 }
@@ -441,10 +441,21 @@ internal class Cli(private val raw: List<String>, private val stdin: java.io.Buf
         Files.write(file.toPath(), bytes, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)
     }
 
-    private fun replaceAtomically(file: File, bytes: ByteArray) {
+    /** [ownerOnly] makes the file readable by its owner alone before any byte goes in, for decrypted media. */
+    private fun replaceAtomically(file: File, bytes: ByteArray, ownerOnly: Boolean = false) {
         val temporary = File(file.absoluteFile.parentFile, ".${file.name}.${UUID.randomUUID()}.partial")
         try {
-            Files.write(temporary.toPath(), bytes, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)
+            if (ownerOnly) {
+                Files.createFile(
+                    temporary.toPath(),
+                    java.nio.file.attribute.PosixFilePermissions.asFileAttribute(
+                        java.nio.file.attribute.PosixFilePermissions.fromString("rw-------"),
+                    ),
+                )
+                Files.write(temporary.toPath(), bytes, StandardOpenOption.WRITE)
+            } else {
+                Files.write(temporary.toPath(), bytes, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)
+            }
             Files.move(temporary.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
         } finally {
             temporary.delete()

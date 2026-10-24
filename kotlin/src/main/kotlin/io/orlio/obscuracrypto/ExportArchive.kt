@@ -136,6 +136,7 @@ class ExportIndex private constructor(
          */
         fun parse(manifest: ByteArray): ExportIndex {
             val unreadable = ObscuraCryptoException.InvalidExport("manifest is not readable")
+            if (nestingDepth(manifest) > MAXIMUM_NESTING) throw unreadable
             val root: JsonObject
             val exportVersion: Int
             val vaultSalt: ByteArray
@@ -160,6 +161,8 @@ class ExportIndex private constructor(
                 throw e
             } catch (e: Exception) {
                 throw unreadable
+            } catch (e: StackOverflowError) {
+                throw unreadable
             }
 
             if (exportVersion != 1) {
@@ -172,7 +175,7 @@ class ExportIndex private constructor(
             }
             val seen = HashSet<String>()
             val files = media.map { (id, dataSize, thumbSize) ->
-                if (!isCanonicalUuid(id) || dataSize < 0 || thumbSize < 0 || !seen.add(id)) {
+                if (!isCanonicalUuid(id) || dataSize < 0 || thumbSize < 0 || !seen.add(id.lowercase())) {
                     throw ObscuraCryptoException.InvalidExport(
                         "manifest lists a media file that is not a unique UUID with valid sizes"
                     )
@@ -180,6 +183,28 @@ class ExportIndex private constructor(
                 MediaFile(id, dataSize, thumbSize)
             }
             return ExportIndex(vaultSalt, encryptedMEK, databaseSize, files)
+        }
+
+        /** The app's manifest is a few levels deep; a parser given thousands would run out of stack. */
+        private const val MAXIMUM_NESTING = 32
+
+        /** How deeply arrays and objects are nested, skipping over strings. */
+        private fun nestingDepth(json: ByteArray): Int {
+            var depth = 0
+            var deepest = 0
+            var inString = false
+            var escaped = false
+            for (byte in json) {
+                val c = byte.toInt().toChar()
+                if (inString) {
+                    if (escaped) escaped = false else if (c == '\\') escaped = true else if (c == '"') inString = false
+                } else when (c) {
+                    '"' -> inString = true
+                    '[', '{' -> { depth += 1; if (depth > deepest) deepest = depth }
+                    ']', '}' -> depth -= 1
+                }
+            }
+            return deepest
         }
 
         private fun JsonObject.primitive(key: String): JsonPrimitive =
@@ -341,7 +366,7 @@ class ExportArchive private constructor(
             if (length <= AesGcm.OVERHEAD || length > maximumSize) {
                 throw ObscuraCryptoException.InvalidExport("a record has an impossible length")
             }
-            val sealed = input.readExactly(length.toInt()) ?: throw ObscuraCryptoException.InvalidExport("the export ends early")
+            val sealed = input.readExactlyGrowing(length.toInt()) ?: throw ObscuraCryptoException.InvalidExport("the export ends early")
             if (!constantTimeEquals(sealed.copyOf(AesGcm.NONCE_SIZE), nonce)) {
                 throw ObscuraCryptoException.InvalidExport(
                     "a record carries the wrong nonce: records were reordered or replaced"

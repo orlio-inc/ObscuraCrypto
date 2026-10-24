@@ -76,6 +76,23 @@ internal fun InputStream.readExactly(count: Int): ByteArray? {
 }
 
 
+/**
+ * Like [readExactly], for a count that came from a file and has not been
+ * authenticated yet. The buffer grows as bytes really arrive, so a header that
+ * claims 256 MiB costs what the file actually holds, not 256 MiB of memory.
+ */
+internal fun InputStream.readExactlyGrowing(count: Int): ByteArray? {
+    var buffer = ByteArray(minOf(count, 1 shl 20))
+    var total = 0
+    while (total < count) {
+        if (total == buffer.size) buffer = buffer.copyOf(minOf(count, buffer.size * 2))
+        val read = read(buffer, total, buffer.size - total)
+        if (read < 0) return null
+        total += read
+    }
+    return buffer
+}
+
 /** A UUID in the canonical 8-4-4-4-12 form, the only shape a media ID takes. */
 internal fun isCanonicalUuid(text: String): Boolean = UUID_PATTERN.matches(text)
 
