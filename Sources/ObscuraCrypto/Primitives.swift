@@ -33,6 +33,13 @@ public enum ObscuraCryptoError: Error, Equatable, Sendable, CustomStringConverti
     case chunkedFileSizeMismatch(expected: Int, actual: Int)
     case invalidFolderProtection(String)
     case invalidExport(String)
+    /// A recovery phrase did not have 24 words.
+    case recoveryPhraseWrongLength(Int)
+    /// The word at this position (1-based) is not on the list.
+    case recoveryPhraseUnknownWord(position: Int)
+    /// Every word is on the list, but the phrase's checksum does not match:
+    /// a word was mistyped as another list word, or words were swapped.
+    case recoveryPhraseChecksumMismatch
 
     public var description: String {
         switch self {
@@ -52,6 +59,9 @@ public enum ObscuraCryptoError: Error, Equatable, Sendable, CustomStringConverti
             return "File is \(actual) bytes but its header describes \(expected)"
         case .invalidFolderProtection(let reason): return "Not valid folder protection data: \(reason)"
         case .invalidExport(let reason): return "Not a valid .obscura export: \(reason)"
+        case .recoveryPhraseWrongLength(let count): return "A recovery phrase has 24 words, not \(count)"
+        case .recoveryPhraseUnknownWord(let position): return "Word \(position) of the recovery phrase is not on the word list"
+        case .recoveryPhraseChecksumMismatch: return "The recovery phrase's checksum does not match: a word is wrong or out of place"
         }
     }
 }

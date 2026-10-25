@@ -34,6 +34,9 @@ enum CompatWriter {
         case .chunkedFileSizeMismatch: return "chunkedFileSizeMismatch"
         case .invalidFolderProtection: return "invalidFolderProtection"
         case .invalidExport: return "invalidExport"
+        case .recoveryPhraseWrongLength: return "recoveryPhraseWrongLength"
+        case .recoveryPhraseUnknownWord: return "recoveryPhraseUnknownWord"
+        case .recoveryPhraseChecksumMismatch: return "recoveryPhraseChecksumMismatch"
         }
     }
 

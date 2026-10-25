@@ -50,6 +50,12 @@ public final class SecureBytes: @unchecked Sendable {
         try body(UnsafeRawBufferPointer(buffer))
     }
 
+    /// Writes into the buffer in place. Internal: keys are built here only
+    /// by this package, as `RecoveryPhrase` does when decoding words.
+    func withUnsafeMutableBytes<Result>(_ body: (UnsafeMutableRawBufferPointer) throws -> Result) rethrows -> Result {
+        try body(buffer)
+    }
+
     /// Overwrites the bytes with zeros. Also done automatically on release.
     public func clear() {
         guard let base = buffer.baseAddress, buffer.count > 0 else { return }

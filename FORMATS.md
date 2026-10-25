@@ -53,6 +53,26 @@ offset  size  field
 - Changing the password rewraps the master key under a fresh salt and leaves
   everything else untouched.
 
+## Recovery phrase: the master key as 24 words
+
+Not a file format: a way to write a vault's 32-byte master key on paper.
+
+- Bits = master key (32 bytes) followed by the first byte of its SHA-256:
+  264 bits. Read 11 bits at a time, most significant first, giving 24 numbers
+  from 0 to 2047. Each is a position in the BIP-39 English word list
+  (`bip-0039/english.txt` in github.com/bitcoin/bips, SHA-256
+  `2f5eed53a4727b4bf8880d8f3f199efc90e58503646d9ff8eff3a2ed3b24dbda`).
+- This is exactly BIP-39's encoding of 256 bits of entropy, so its published
+  test vectors apply. BIP-39's seed derivation (PBKDF2 over the words) is not
+  used: the words decode straight back to the master key.
+- Words compare after trimming and lowercasing. A word off the list, or a
+  phrase whose last 8 bits are not the key's checksum, is refused before any
+  vault is tried.
+- Finding the vault: a phrase's key opens a vault header's database length
+  field, sealed with the master key, and no other header's.
+- The phrase is the key, so it outlives every password change and cannot be
+  revoked short of re-encrypting the vault under a new master key.
+
 ## Folder protection
 
 A protected folder has a random 32-byte folder key. Three values are stored in

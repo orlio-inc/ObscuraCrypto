@@ -164,6 +164,34 @@ public struct VaultHeader: Sendable, Equatable {
         )
     }
 
+    /// Whether `masterKey` is this vault's master key.
+    ///
+    /// Answered by opening the database length, the one field sealed with the
+    /// master key itself; AES-GCM only opens it with the key that sealed it.
+    /// This is how a recovery phrase finds its vault without a password, and
+    /// it needs no key derivation: the key is already 256 random bits.
+    public func opens(masterKey: SecureBytes) -> Bool {
+        (try? databaseSize(masterKey: masterKey)) != nil
+    }
+
+    /// The same master key under a new password and a fresh salt, for when
+    /// the old password is not known but the master key is, from a recovery
+    /// phrase. Refuses a key that is not this vault's.
+    public func settingPassword(_ newPassword: String, masterKey: SecureBytes) throws -> VaultHeader {
+        guard opens(masterKey: masterKey) else {
+            throw ObscuraCryptoError.authenticationFailed
+        }
+        let newSalt = try KeyDerivation.makeSalt()
+        let newPasswordKey = try KeyDerivation.pbkdf2SHA256(password: newPassword, salt: newSalt, iterations: KeyDerivation.vaultIterations)
+        return VaultHeader(
+            cipherSuite: cipherSuite,
+            kdfIterations: KeyDerivation.vaultIterations,
+            salt: newSalt,
+            wrappedMasterKey: try masterKey.withUnsafeBytes { try AESGCM.seal($0, key: newPasswordKey) },
+            encryptedDatabaseSize: encryptedDatabaseSize
+        )
+    }
+
     /// The length of the database that follows the header.
     public func databaseSize(masterKey: SecureBytes) throws -> UInt64 {
         try Self.decryptDatabaseSize(encryptedDatabaseSize, masterKey: masterKey)
