@@ -10,7 +10,7 @@ plugins {
 layout.buildDirectory.set(layout.projectDirectory.dir("build.nosync"))
 
 group = "io.orlio"
-version = "1.1.0"
+version = "1.2.0"
 
 // Fixtures are shared with the Swift package, so both languages read the same files.
 val fixturesDir = layout.projectDirectory.dir("../Tests/ObscuraCryptoTests/Fixtures")
