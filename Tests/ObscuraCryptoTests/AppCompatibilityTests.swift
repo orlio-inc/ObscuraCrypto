@@ -50,6 +50,19 @@ final class AppCompatibilityTests: XCTestCase {
         try VaultHeader(parsing: Data(contentsOf: fixture("vault.header"))).unlock(password: manifest.vaultPassword)
     }
 
+    /// The app vault's recovery phrase. The Kotlin library's `RecoveryPhraseTest`
+    /// checks the same words, and they were also worked out by hand with
+    /// Python's hashlib and the published word list, so all three agree on
+    /// the encoding of a real vault's key.
+    func testTheAppsVaultHasThePhraseEveryImplementationAgreesOn() throws {
+        let phrase = "neglect until scissors settle fit van artefact leave regular fetch open acquire "
+            + "mystery pioneer oblige viable pioneer initial apple sunset place rifle people lobster"
+        let manifest = try manifest()
+        XCTAssertEqual(try RecoveryPhrase.words(for: masterKey(manifest)).joined(separator: " "), phrase)
+        let header = try VaultHeader(parsing: Data(contentsOf: fixture("vault.header")))
+        XCTAssertTrue(header.opens(masterKey: try RecoveryPhrase.masterKey(from: phrase.split(separator: " ").map(String.init))))
+    }
+
     private func folderKey(_ manifest: Manifest) throws -> SecureBytes {
         try FolderProtection(
             salt: XCTUnwrap(Data(base64Encoded: manifest.folder.passwordSalt)),

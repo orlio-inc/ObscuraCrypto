@@ -119,6 +119,49 @@ class VaultHeader(
         }
     }
 
+    /**
+     * Whether [masterKey] is this vault's master key.
+     *
+     * Answered by opening the database length, the one field sealed with the
+     * master key itself; AES-GCM only opens it with the key that sealed it.
+     * This is how a recovery phrase finds its vault without a password, and it
+     * needs no key derivation: the key is already 256 random bits.
+     */
+    fun opens(masterKey: SecureBytes): Boolean =
+        try {
+            databaseSize(masterKey)
+            true
+        } catch (e: ObscuraCryptoException.AuthenticationFailed) {
+            false
+        } catch (e: ObscuraCryptoException.InvalidKeyLength) {
+            false
+        } catch (e: ObscuraCryptoException.InvalidVaultHeader) {
+            false
+        }
+
+    /**
+     * The same master key under a new password and a fresh salt, for when the
+     * old password is not known but the master key is, from a recovery
+     * phrase. Refuses a key that is not this vault's with
+     * [ObscuraCryptoException.AuthenticationFailed].
+     */
+    fun settingPassword(newPassword: String, masterKey: SecureBytes): VaultHeader {
+        if (!opens(masterKey)) throw ObscuraCryptoException.AuthenticationFailed()
+        val newSalt = KeyDerivation.makeSalt()
+        val newPasswordKey = KeyDerivation.pbkdf2SHA256(newPassword, newSalt, KeyDerivation.VAULT_ITERATIONS)
+        try {
+            return VaultHeader(
+                cipherSuite = cipherSuite,
+                kdfIterations = KeyDerivation.VAULT_ITERATIONS.toLong(),
+                salt = newSalt,
+                wrappedMasterKey = masterKey.withBytes { AesGcm.seal(it, newPasswordKey) },
+                encryptedDatabaseSize = encryptedDatabaseSize,
+            )
+        } finally {
+            newPasswordKey.clear()
+        }
+    }
+
     /** The length of the database that follows the header. */
     fun databaseSize(masterKey: SecureBytes): Long = decryptDatabaseSize(encryptedDatabaseSize, masterKey)
 

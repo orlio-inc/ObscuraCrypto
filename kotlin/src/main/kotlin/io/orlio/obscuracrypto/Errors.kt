@@ -62,6 +62,21 @@ sealed class ObscuraCryptoException(message: String) : Exception(message) {
     class InvalidExport(val reason: String) :
         ObscuraCryptoException("Not a valid .obscura export: $reason")
 
+    /** A recovery phrase did not have 24 words. */
+    class RecoveryPhraseWrongLength(val count: Int) :
+        ObscuraCryptoException("A recovery phrase has 24 words, not $count")
+
+    /** The word at this position (1-based) is not on the list. */
+    class RecoveryPhraseUnknownWord(val position: Int) :
+        ObscuraCryptoException("Word $position of the recovery phrase is not on the word list")
+
+    /**
+     * Every word is on the list, but the phrase's checksum does not match: a
+     * word was mistyped as another list word, or words were swapped.
+     */
+    class RecoveryPhraseChecksumMismatch :
+        ObscuraCryptoException("The recovery phrase's checksum does not match: a word is wrong or out of place")
+
     override fun equals(other: Any?): Boolean =
         other is ObscuraCryptoException && other::class == this::class && other.message == message
 

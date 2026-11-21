@@ -72,6 +72,10 @@ Not a file format: a way to write a vault's 32-byte master key on paper.
   field, sealed with the master key, and no other header's.
 - The phrase is the key, so it outlives every password change and cannot be
   revoked short of re-encrypting the vault under a new master key.
+- Both languages implement it (`RecoveryPhrase` in each, with
+  `VaultHeader.opens` and `VaultHeader.settingPassword`), and both check the
+  phrase of the app's own `Fixtures/vault.header` against the same 24 words,
+  which were also worked out independently with Python's hashlib.
 
 ## Folder protection
 
