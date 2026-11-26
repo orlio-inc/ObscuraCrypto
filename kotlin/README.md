@@ -2,13 +2,15 @@
 
 The same encryption as the Swift package, for the Android version of Obscura
 Photo Vault: the vault header, folder passwords, single-shot and chunked media,
-and `.obscura` exports, in the byte layouts of [FORMATS.md](../FORMATS.md). A
-vault written on an iPhone opens with this library, and the reverse.
+`.obscura` exports and Send Encrypted's `.obscurashared` files, in the byte
+layouts of [FORMATS.md](../FORMATS.md). A vault written on an iPhone opens with
+this library, and the reverse.
 
 Plain JVM Kotlin with no Android dependency, so the tests run on a Mac or a
 laptop. Everything cryptographic is the platform's JCA (`Cipher`, `Mac`,
-`MessageDigest`, `SecureRandom`); the only dependency is
-`kotlinx-serialization-json`, used to read the export manifest.
+`MessageDigest`, `SecureRandom`), and the export and shared-items manifests
+are read by the library's own strict JSON reader, so it has no dependencies
+beyond the Kotlin standard library.
 
 ```sh
 cd kotlin
@@ -44,10 +46,41 @@ it, for an Android port to match:
 - **Exports:** a `.obscura` export opens with the password it was made with,
   not the phrase.
 
+## Send Encrypted files
+
+`SharedItemsFile.write` seals files into an `.obscurashared` file and
+`SharedItemsReader.open` reads one, from a `File` or from any `InputStream`
+(what a received file opens as on Android). Format version 3 (FORMATS.md); the
+layouts each app had before were never released and are refused.
+
+For an app sending one: offer `SharedPassword.suggested()` (six words) first,
+take a typed password of 6 characters or more, and when
+`SharedPassword.problem` finds one easy to guess, say so without refusing it
+(`write` takes any password). A file without a password is open to anyone who
+has it, and can be changed by them: say so where it is made and where it is
+opened.
+
+For an app reading one:
+
+- Read every part in the manifest's order, with `read` for what the app adds
+  and `skip` for the rest (unknown kinds and roles included: they are still
+  checked), then call `finish`, which refuses anything after the last part.
+- A part is only good once `read` returns: its SHA-256 is checked at the end,
+  so delete whatever was written from it when `read` throws.
+- Errors to tell apart on screen: `WrongPassword`, `SharedItemsNewerVersion`
+  (ask the person to update the app, never "damaged"), `SharedItemsDamaged`,
+  `InvalidSharedItems` (not such a file at all) and `SharedItemsNotLocked`.
+- Ask `SharedItemsPreamble.isOpen` first. Open a file sent without a password
+  with `null`, after saying so; pass a password only for a sealed one. Given a
+  password, a file without one is refused (`SharedItemsNotLocked`), so a
+  sealed file swapped on the way for an open one never passes as the sender's.
+- The sizes in the manifest are the sender's word: refuse items larger than
+  the app can hold where it would hold them in memory, before reading them.
+
 ## Command line
 
 `cli/` is the `obscura` tool of the Swift package for any computer with JDK 21:
-the same commands (`vault`, `media`, `folder`, `export`), the same output, and
+the same commands (`vault`, `media`, `folder`, `export`, `shared`), the same output, and
 files that open in either. See [VERIFYING.md](../VERIFYING.md).
 
 ```sh
@@ -65,5 +98,7 @@ Licence: GPL-3.0-or-later, as the Swift package.
 `SecureBytes` zeroes its array when closed, but the JVM gives no guarantee that
 the garbage collector has not moved the array first, and the JCA copies a key
 into its own cipher state. Zeroing limits how long a key sits in memory; it does
-not prove there is no other copy. The Swift package's `SecureBytes` is stronger
-and the difference is deliberate to state.
+not prove there is no other copy. The Swift package's `SecureBytes` keeps its
+key in memory the program allocates itself, which no collector moves; in both
+languages a cleared key refuses to be used, so nothing can be sealed under its
+zeros.

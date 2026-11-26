@@ -10,16 +10,15 @@ plugins {
 layout.buildDirectory.set(layout.projectDirectory.dir("build.nosync"))
 
 group = "io.orlio"
-version = "1.2.0"
+version = "1.3.0"
 
 // Fixtures are shared with the Swift package, so both languages read the same files.
 val fixturesDir = layout.projectDirectory.dir("../Tests/ObscuraCryptoTests/Fixtures")
 
 dependencies {
-    // Only for reading the export manifest's JSON. Everything cryptographic is the JDK's.
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
-
     testImplementation(kotlin("test-junit5"))
+    // The tests read the fixtures' compat.json with it; the library reads JSON with its own reader.
+    testImplementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
     testImplementation("org.junit.jupiter:junit-jupiter:5.13.4")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher:1.13.4")
     // The provider Android uses (BoringSSL), so the tests also run under it on this Mac.

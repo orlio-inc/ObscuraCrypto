@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 Orlio Inc.
 
+import CryptoKit
 import XCTest
 @testable import ObscuraCrypto
 
@@ -79,6 +80,25 @@ final class VaultTests: XCTestCase {
         let (protection, folderKey) = try FolderProtection.create(password: "folder pass")
         XCTAssertEqual(try protection.unlock(password: "folder pass"), folderKey)
         XCTAssertThrowsError(try protection.unlock(password: "folder pasS")) {
+            XCTAssertEqual($0 as? ObscuraCryptoError, .wrongPassword)
+        }
+    }
+
+    /// New folder passwords take a vault's rounds: the stored hash is that of
+    /// the key derived at 600,000.
+    func testANewFolderPasswordUsesAVaultsRounds() throws {
+        let (protection, _) = try FolderProtection.create(password: "folder pass")
+        let key = try KeyDerivation.pbkdf2SHA256(password: "folder pass", salt: protection.salt, iterations: 600_000)
+        XCTAssertEqual(key.withUnsafeBytes { Data(SHA256.hash(data: $0)) }, protection.passwordHash)
+    }
+
+    /// Folders protected before keep their 100,000 rounds, and still open.
+    func testAFolderFromBeforeStillOpens() throws {
+        let (protection, folderKey) = try FolderProtection.create(password: "old folder", iterations: 100_000)
+        let key = try KeyDerivation.pbkdf2SHA256(password: "old folder", salt: protection.salt, iterations: 100_000)
+        XCTAssertEqual(key.withUnsafeBytes { Data(SHA256.hash(data: $0)) }, protection.passwordHash)
+        XCTAssertEqual(try protection.unlock(password: "old folder"), folderKey)
+        XCTAssertThrowsError(try protection.unlock(password: "old foldeR")) {
             XCTAssertEqual($0 as? ObscuraCryptoError, .wrongPassword)
         }
     }

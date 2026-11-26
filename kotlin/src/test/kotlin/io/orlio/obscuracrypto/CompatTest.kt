@@ -33,6 +33,6 @@ class CompatTest {
     @Test
     fun writeKotlinFixtures() {
         assumeTrue(System.getenv("OBSCURA_WRITE_KOTLIN_FIXTURES") != null)
-        Compat.write(File(Fixtures.directory, "FromKotlin"), "ObscuraCrypto Kotlin 1.1.0")
+        Compat.write(File(Fixtures.directory, "FromKotlin"), "ObscuraCrypto Kotlin 1.3.0")
     }
 }

@@ -11,8 +11,9 @@ import Foundation
 /// with the vault's master key first and then again with the folder key, so
 /// opening it needs both. The folder key is wrapped with a key derived from
 /// the folder password, the same way the vault header wraps the master key,
-/// at 100,000 PBKDF2 rounds rather than 600,000 because it only ever sits
-/// behind an unlocked vault.
+/// at 600,000 PBKDF2 rounds. Folders protected before ObscuraCrypto 1.2.0
+/// (Kotlin 1.3.0) used 100,000; the count is not stored, so `unlock` tries
+/// both, and such a folder keeps its count until its password is set again.
 ///
 /// These three values are stored in the vault's database, base64-encoded.
 public struct FolderProtection: Sendable, Equatable {
@@ -39,30 +40,44 @@ public struct FolderProtection: Sendable, Equatable {
         self.wrappedFolderKey = wrappedFolderKey
     }
 
+    /// The rounds a folder password may have been set with: 100,000 before
+    /// ObscuraCrypto 1.2.0 (Kotlin 1.3.0), 600,000 since. Tried in this
+    /// order, so folders from before open as fast as they always did.
+    static let readableIterations = [KeyDerivation.legacyFolderIterations, KeyDerivation.folderIterations]
+
     /// Protection for a new folder, and the folder key it wraps.
     public static func create(password: String) throws -> (protection: FolderProtection, folderKey: SecureBytes) {
+        try create(password: password, iterations: KeyDerivation.folderIterations)
+    }
+
+    /// `create` with chosen rounds: the old count only for tests and
+    /// fixtures that need a folder as earlier releases protected it.
+    static func create(password: String, iterations: UInt32) throws -> (protection: FolderProtection, folderKey: SecureBytes) {
         let folderKey = try SecureBytes.random(count: 32)
         let salt = try KeyDerivation.makeSalt()
-        let passwordKey = try KeyDerivation.pbkdf2SHA256(password: password, salt: salt, iterations: KeyDerivation.folderIterations)
+        let passwordKey = try KeyDerivation.pbkdf2SHA256(password: password, salt: salt, iterations: iterations)
         let protection = try FolderProtection(
             salt: salt,
-            passwordHash: passwordKey.withUnsafeBytes { Data(SHA256.hash(data: $0)) },
-            wrappedFolderKey: try folderKey.withUnsafeBytes { try AESGCM.seal($0, key: passwordKey) }
+            passwordHash: try passwordKey.withKeyBytes { Data(SHA256.hash(data: $0)) },
+            wrappedFolderKey: try folderKey.withKeyBytes { try AESGCM.seal($0, key: passwordKey) }
         )
         return (protection, folderKey)
     }
 
-    /// Unwraps the folder key with `password`.
+    /// Unwraps the folder key with `password`, at whichever of the
+    /// `readableIterations` the folder was protected with. A wrong password
+    /// costs both derivations.
     public func unlock(password: String) throws -> SecureBytes {
-        let passwordKey = try KeyDerivation.pbkdf2SHA256(password: password, salt: salt, iterations: KeyDerivation.folderIterations)
-        let hash = passwordKey.withUnsafeBytes { Data(SHA256.hash(data: $0)) }
-        guard constantTimeEquals(hash, passwordHash) else {
-            throw ObscuraCryptoError.wrongPassword
+        for iterations in Self.readableIterations {
+            let passwordKey = try KeyDerivation.pbkdf2SHA256(password: password, salt: salt, iterations: iterations)
+            let hash = try passwordKey.withKeyBytes { Data(SHA256.hash(data: $0)) }
+            guard constantTimeEquals(hash, passwordHash) else { continue }
+            do {
+                return try AESGCM.unwrapKey(wrappedFolderKey, with: passwordKey)
+            } catch ObscuraCryptoError.authenticationFailed {
+                throw ObscuraCryptoError.wrongPassword
+            }
         }
-        do {
-            return try AESGCM.unwrapKey(wrappedFolderKey, with: passwordKey)
-        } catch ObscuraCryptoError.authenticationFailed {
-            throw ObscuraCryptoError.wrongPassword
-        }
+        throw ObscuraCryptoError.wrongPassword
     }
 }

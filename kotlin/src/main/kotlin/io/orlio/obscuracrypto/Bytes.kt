@@ -98,3 +98,25 @@ internal fun isCanonicalUuid(text: String): Boolean = UUID_PATTERN.matches(text)
 
 private val UUID_PATTERN =
     Regex("^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$")
+
+/** The JSON the apps write is a few levels deep; a parser given thousands would run out of stack. */
+internal const val MAXIMUM_JSON_NESTING = 32
+
+/** How deeply arrays and objects are nested, skipping over strings. */
+internal fun jsonNestingDepth(json: ByteArray): Int {
+    var depth = 0
+    var deepest = 0
+    var inString = false
+    var escaped = false
+    for (byte in json) {
+        val c = byte.toInt().toChar()
+        if (inString) {
+            if (escaped) escaped = false else if (c == '\\') escaped = true else if (c == '"') inString = false
+        } else when (c) {
+            '"' -> inString = true
+            '[', '{' -> { depth += 1; if (depth > deepest) deepest = depth }
+            ']', '}' -> depth -= 1
+        }
+    }
+    return deepest
+}

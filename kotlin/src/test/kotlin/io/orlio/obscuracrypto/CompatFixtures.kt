@@ -35,7 +35,7 @@ import kotlinx.serialization.json.long
  *   "vaultPassword": "...", "folderPassword": "...",
  *   "masterKeyFingerprint": "...", "folderKeyFingerprint": "...", "databaseSize": N,
  *   "folder": { "passwordSalt": b64, "passwordHash": b64, "folderKeyEncrypted": b64 },
- *   "cases": [ { "file": "...", "kind": "vaultHeader" | "singleShot" | "chunked" | "export",
+ *   "cases": [ { "file": "...", "kind": "vaultHeader" | "singleShot" | "chunked" | "export" | "sharedItems",
  *                "expect": "opens" | "<error name>", ... } ] }
  * ```
  * Plaintext is never stored: a case carries `count` and `seed`, and the bytes
@@ -111,6 +111,9 @@ object Compat {
                 require(out.toByteArray().contentEquals(plaintextOf(case))) { "plaintext differs" }
                 require(reader.header.chunkPlaintextSize == case.getValue("chunkSize").jsonPrimitive.long) { "chunk size" }
                 require(reader.header.hasFolderLayer == withFolder) { "folder flag" }
+                case["version"]?.jsonPrimitive?.int?.let { version ->
+                    require(reader.header.formatVersion.toInt() == version) { "format version" }
+                }
             }
             "export" -> {
                 val password = case["password"]?.jsonPrimitive?.content ?: vaultPassword
@@ -131,6 +134,25 @@ object Compat {
                     }
                     require(archive.isAtEnd()) { "records left over" }
                 }
+            }
+            "sharedItems" -> SharedItemsReader.open(file, case["password"]?.jsonPrimitive?.content).use { reader ->
+                val items = case.getValue("items").jsonArray
+                require(reader.manifest.items.size == items.size) { "item count" }
+                for ((element, item) in items.zip(reader.manifest.items)) {
+                    val expected = element.jsonObject
+                    require(item.kind == expected.getValue("kind").jsonPrimitive.content) { "kind" }
+                    require(item.type == expected["type"]?.jsonPrimitive?.content) { "type of ${item.kind}" }
+                    require(item.name == expected["name"]?.jsonPrimitive?.content) { "name of ${item.kind}" }
+                    val parts = expected.getValue("parts").jsonArray.map { it.jsonObject }
+                    require(item.parts.map { it.role } == parts.map { it.getValue("role").jsonPrimitive.content }) { "parts of ${item.kind}" }
+                    for ((expectedPart, part) in parts.zip(item.parts)) {
+                        val out = ByteArrayOutputStream()
+                        reader.read(part) { out.write(it) }
+                        val plaintext = Fixtures.plaintext(expectedPart.getValue("count").jsonPrimitive.int, expectedPart.getValue("seed").jsonPrimitive.int)
+                        require(out.toByteArray().contentEquals(plaintext)) { "${item.kind} ${part.role} differs" }
+                    }
+                }
+                reader.finish()
             }
             else -> error("unknown case kind $kind")
         }
@@ -198,14 +220,18 @@ object Compat {
         put("tampered/photo-tag.data.enc", tamperedPhoto)
         case("file" to "tampered/photo-tag.data.enc", "kind" to "singleShot", "folder" to false, "count" to 20_000, "seed" to 1, "expect" to "authenticationFailed")
 
-        // Chunked media
-        fun chunked(name: String, count: Int, seed: Int, chunkSize: Long, withFolder: Boolean): File {
+        // Chunked media: version 2, which new files are written in, and
+        // version 1, which every file from before it is and which must read forever.
+        fun chunked(
+            name: String, count: Int, seed: Int, chunkSize: Long, withFolder: Boolean,
+            version: Byte = ChunkedMediaHeader.CURRENT_VERSION,
+        ): File {
             val source = File(directory, ".source.bin").also { it.writeBytes(Fixtures.plaintext(count, seed)) }
             val destination = File(directory, name)
-            ChunkedMediaEncryptor.encrypt(source, destination, master, if (withFolder) folderKey else null, chunkSize)
+            ChunkedMediaEncryptor.encrypt(source, destination, master, if (withFolder) folderKey else null, chunkSize, version)
             source.delete()
             case("file" to name, "kind" to "chunked", "folder" to withFolder, "count" to count, "seed" to seed,
-                "chunkSize" to chunkSize, "expect" to "opens")
+                "chunkSize" to chunkSize, "version" to version.toInt(), "expect" to "opens")
             return destination
         }
         chunked("video.data.enc", 200_000, 2, 65_536, false)
@@ -213,6 +239,9 @@ object Compat {
         chunked("video-boundary.data.enc", 131_072, 3, 65_536, false)
         chunked("video-empty.data.enc", 0, 4, 65_536, false)
         chunked("video-small-chunks.data.enc", 10_000, 5, 4_096, true)
+        chunked("video-v1.data.enc", 200_000, 2, 65_536, false, 0x01)
+        chunked("video-folder-v1.data.enc", 200_000, 2, 65_536, true, 0x01)
+        chunked("video-empty-v1.data.enc", 0, 4, 65_536, false, 0x01)
 
         val video = File(directory, "video.data.enc").readBytes()
         val videoHeader = ChunkedMediaHeader.parse(video)
@@ -234,13 +263,32 @@ object Compat {
             video.copyOf().also { val at = videoHeader.chunkOffset(2).toInt() + 20; it[at] = (it[at].toInt() xor 1).toByte() },
             "authenticationFailed",
         )
-        val hostile = video.copyOf(25)
+        // A changed salt derives other keys.
+        tamperedVideo(
+            "video-salt.data.enc",
+            video.copyOf().also { it[40] = (it[40].toInt() xor 1).toByte() },
+            "authenticationFailed",
+        )
+        // Cut short at a chunk boundary with the length lowered to match: the
+        // new last chunk carries no end mark.
+        val cut = video.copyOf(videoHeader.chunkOffset(2).toInt())
+        System.arraycopy(bigEndianBytes(2L * 65_536, 8), 0, cut, 9, 8)
+        tamperedVideo("video-cut.data.enc", cut, "chunkNonceMismatch")
+        // Cut to its header and called empty: an empty file still has a chunk.
+        val emptied = video.copyOf(videoHeader.byteCount)
+        System.arraycopy(ByteArray(8), 0, emptied, 9, 8)
+        tamperedVideo("video-emptied.data.enc", emptied, "chunkedFileSizeMismatch")
+        val hostile = video.copyOf(videoHeader.byteCount)
         System.arraycopy(bigEndianBytes(-16L, 8), 0, hostile, 9, 8)
         tamperedVideo("video-hostile-length.data.enc", hostile, "invalidChunkedHeader")
+        tamperedVideo("video-version.data.enc", video.copyOf().also { it[4] = 0x03 }, "invalidChunkedHeader")
 
         // Export
         val exportCases = writeExport(directory, created, vaultPassword, master, folderKey)
         cases += exportCases
+
+        // Shared items
+        cases += writeSharedItems(directory)
 
         val manifest = JsonObject(mapOf(
             "format" to JsonPrimitive(1),
@@ -291,9 +339,10 @@ object Compat {
             append("]}")
         }
 
+        // Version 1 as releases before 1.3.0 wrote it, which every reader must still take.
         fun export(name: String, password: String = vaultPassword): File {
             val out = ByteArrayOutputStream()
-            val writer = ExportWriter.begin(out, password)
+            val writer = ExportWriterVersion1.begin(out, password)
             writer.writeManifest(manifestJson.toByteArray())
             writer.writeFile(vaultFile.inputStream(), vaultFile.size.toLong())
             for (m in media) {
@@ -305,6 +354,19 @@ object Compat {
         }
 
         val good = export("export.obscura")
+
+        // Version 2, in small records so the files run across several.
+        val export2 = ByteArrayOutputStream().also { out ->
+            val writer = ExportWriter.begin(out, vaultPassword, KeyDerivation.VAULT_ITERATIONS, EXPORT_RECORD_SIZE)
+            writer.writeManifest(manifestJson.toByteArray())
+            writer.writeFile(vaultFile.inputStream(), vaultFile.size.toLong())
+            for (m in media) {
+                writer.writeFile(m.data.inputStream(), m.data.size.toLong())
+                writer.writeFile(m.thumb.inputStream(), m.thumb.size.toLong())
+            }
+            writer.finish()
+        }.toByteArray()
+        File(directory, "export2.obscura").writeBytes(export2)
         val mediaCase = JsonArray(media.map {
             JsonObject(mapOf(
                 "id" to JsonPrimitive(it.id),
@@ -331,7 +393,170 @@ object Compat {
             exportCase("export.obscura", "wrongPassword", password = "not the password"),
             exportCase("tampered/export-flipped.obscura", "authenticationFailed"),
             exportCase("tampered/export-truncated.obscura", "invalidExport"),
+            exportCase("export2.obscura", "opens"),
+            exportCase("export2.obscura", "wrongPassword", password = "not the password"),
+        ) + tamperedExports(export2, directory).map { (file, expect) -> exportCase(file, expect) }
+    }
+
+    /** Plaintext bytes in each record of the version 2 export fixtures. As in the Swift writer. */
+    private const val EXPORT_RECORD_SIZE = 4_096
+
+    /** A version 2 export altered each way a reader must notice. As in the Swift writer. */
+    private fun tamperedExports(good: ByteArray, directory: File): List<Pair<String, String>> {
+        fun put(name: String, bytes: ByteArray): String {
+            File(directory, "tampered/$name").writeBytes(bytes)
+            return "tampered/$name"
+        }
+        val headerSize = ExportHeader.parse(good).byteCount
+        val recordBytes = EXPORT_RECORD_SIZE + AesGcm.OVERHEAD
+        check((good.size - headerSize) / recordBytes > 2)
+        val flipped = good.copyOf().also { it[it.size - 30] = (it[it.size - 30].toInt() xor 1).toByte() }
+        // A reserved header byte: the password still checks, but every record is sealed to the header as it was.
+        val header = good.copyOf().also { it[90] = (it[90].toInt() xor 1).toByte() }
+        // A file only a newer version can read, and one with a flag this version must understand.
+        val newer = good.copyOf().also {
+            it[5] = 3
+            it[7] = 3
+        }
+        val flagged = good.copyOf().also { it[9] = (it[9].toInt() or 1).toByte() }
+        // The key block says it holds a lock that is not there.
+        val keyBlock = good.copyOf().also { it[ExportHeader.VERSION_2_SIZE] = 1 }
+        // The last record moved to the front, and a record appended after the end mark.
+        val last = good.copyOfRange(good.size - recordBytes, good.size)
+        val swapped = good.copyOf(headerSize) + last + good.copyOfRange(headerSize, good.size - recordBytes)
+        return listOf(
+            put("export2-flipped.obscura", flipped) to "invalidExport",
+            put("export2-truncated.obscura", good.copyOf(good.size - 100)) to "invalidExport",
+            put("export2-last-record-dropped.obscura", good.copyOf(good.size - recordBytes)) to "invalidExport",
+            put("export2-reordered.obscura", swapped) to "invalidExport",
+            put("export2-appended.obscura", good + last) to "invalidExport",
+            put("export2-header-altered.obscura", header) to "invalidExport",
+            put("export2-key-block-altered.obscura", keyBlock) to "invalidExport",
+            put("export2-newer.obscura", newer) to "exportNewerVersion",
+            put("export2-required-flag.obscura", flagged) to "exportNewerVersion",
         )
+    }
+
+    /** Each kind, a Live Photo's two parts, a title outside ASCII, and parts over several small records. As in the Swift writer. */
+    private class SharedSpec(val kind: SharedItemsFile.Kind, val type: String?, val name: String?, val parts: List<Triple<String, Int, Int>>)
+
+    private val sharedItems = listOf(
+        SharedSpec(SharedItemsFile.Kind.PHOTO, "image/jpeg", null, listOf(Triple("file", 9_000, 21))),
+        SharedSpec(SharedItemsFile.Kind.GIF, "image/gif", null, listOf(Triple("file", 800, 22))),
+        SharedSpec(SharedItemsFile.Kind.VIDEO, "video/quicktime", null, listOf(Triple("file", 12_000, 23))),
+        SharedSpec(SharedItemsFile.Kind.LIVE_PHOTO, "image/heic", null, listOf(Triple("file", 3_000, 24), Triple("motion", 4_100, 25))),
+        SharedSpec(SharedItemsFile.Kind.PDF, "application/pdf", "Lease, M\u00fcller \u65e5\u672c", listOf(Triple("file", 1_500, 26))),
+    )
+    private const val SHARED_RECORD_SIZE = 4_096
+
+    private fun writeSharedItems(directory: File): List<JsonObject> {
+        val password = "kotlin shared pass"
+        val plaintextFiles = ArrayList<File>()
+        try {
+            val sources = sharedItems.mapIndexed { index, item ->
+                val files = item.parts.map { (role, count, seed) ->
+                    File(directory, ".shared-$index-$role.bin").also { it.writeBytes(Fixtures.plaintext(count, seed)) }
+                }
+                plaintextFiles += files
+                SharedItemsFile.Source(files[0], item.kind, files.getOrNull(1), item.name, item.type)
+            }
+            /** [change] rewrites the real manifest's JSON, for files whose manifest no writer makes. */
+            fun write(
+                name: String, password: String?, rounds: Int = KeyDerivation.VAULT_ITERATIONS, padding: Byte = 0,
+                change: ((String) -> String)? = null,
+            ): ByteArray {
+                val file = File(directory, name)
+                SharedItemsFile.write(sources, password, file, rounds, SHARED_RECORD_SIZE, padding = padding)
+                if (change != null) {
+                    val real = SharedItemsReader.open(file, password).use { it.manifest }
+                    val changed = change(String(SharedItemsJson.encode(real), Charsets.UTF_8)).toByteArray(Charsets.UTF_8)
+                    SharedItemsFile.write(sources, password, file, rounds, SHARED_RECORD_SIZE, changed, padding)
+                }
+                return file.readBytes()
+            }
+            val items = JsonArray(sharedItems.map { item ->
+                JsonObject(buildMap {
+                    put("kind", JsonPrimitive(item.kind.id))
+                    item.type?.let { put("type", JsonPrimitive(it)) }
+                    item.name?.let { put("name", JsonPrimitive(it)) }
+                    put("parts", JsonArray(item.parts.map { (role, count, seed) ->
+                        JsonObject(mapOf("role" to JsonPrimitive(role), "count" to JsonPrimitive(count), "seed" to JsonPrimitive(seed)))
+                    }))
+                })
+            })
+            fun sharedCase(file: String, expect: String, password: String?) = JsonObject(buildMap {
+                put("file", JsonPrimitive(file))
+                put("kind", JsonPrimitive("sharedItems"))
+                put("expect", JsonPrimitive(expect))
+                put("items", items)
+                if (password != null) put("password", JsonPrimitive(password))
+            })
+
+            val locked = write("shared-password.obscurashared", password)
+            val open = write("shared-open.obscurashared", null)
+            val cases = arrayListOf(
+                sharedCase("shared-password.obscurashared", "opens", password),
+                sharedCase("shared-open.obscurashared", "opens", null),
+                sharedCase("shared-password.obscurashared", "wrongPassword", "not the password"),
+                // An open file must not pass for one sealed with the password the receiver expected.
+                sharedCase("shared-open.obscurashared", "sharedItemsNotLocked", password),
+            )
+            fun tampered(name: String, bytes: ByteArray, expect: String, password: String? = null) {
+                File(directory, "tampered/$name").writeBytes(bytes)
+                cases += sharedCase("tampered/$name", expect, password)
+            }
+            fun written(
+                name: String, expect: String, password: String? = null, rounds: Int = KeyDerivation.VAULT_ITERATIONS,
+                padding: Byte = 0, change: ((String) -> String)? = null,
+            ) {
+                write("tampered/$name", password, rounds, padding, change)
+                cases += sharedCase("tampered/$name", expect, password)
+            }
+            fun flipped(bytes: ByteArray, at: Int) = bytes.copyOf().also { it[at] = (it[at].toInt() xor 1).toByte() }
+            val record = SHARED_RECORD_SIZE + AesGcm.OVERHEAD
+            tampered("shared-flipped.obscurashared", flipped(open, open.size - 30), "sharedItemsDamaged")
+            // A reserved header byte: the header is every record's associated data, and the password lock's.
+            tampered("shared-header.obscurashared", flipped(open, 40), "sharedItemsDamaged")
+            tampered("shared-lock-header.obscurashared", flipped(locked, 40), "wrongPassword", password)
+            // The key commitment, the first byte of the key block: an open lock's key no longer matches it, and a password lock that opens
+            // gives a key the file does not commit to.
+            tampered("shared-commitment.obscurashared", flipped(open, SharedItemsFile.HEADER_SIZE), "sharedItemsDamaged")
+            tampered("shared-lock-commitment.obscurashared", flipped(locked, SharedItemsFile.HEADER_SIZE), "wrongPassword", password)
+            tampered("shared-swapped.obscurashared", swappingRecords(open, 1, 2), "sharedItemsDamaged")
+            tampered("shared-truncated.obscurashared", open.copyOf(open.size - 100), "sharedItemsDamaged")
+            // A whole record off: the new last one has no end mark.
+            tampered("shared-cut.obscurashared", open.copyOf(open.size - record), "sharedItemsDamaged")
+            tampered("shared-appended.obscurashared", open + ByteArray(8), "sharedItemsDamaged")
+            // Readable from version 4 only.
+            tampered("shared-newer.obscurashared", open.copyOf().also { it[5] = 4; it[7] = 4 }, "sharedItemsNewerVersion")
+            written("shared-rounds.obscurashared", "invalidSharedItems", password, rounds = 100_000)
+            written("shared-padding.obscurashared", "sharedItemsDamaged", padding = 1)
+            // Manifests each JSON library reads its own way, or not at all.
+            written("shared-twice.obscurashared", "sharedItemsDamaged") {
+                it.replaceFirst("""{"kind":"photo"""", """{"kind":"photo","kind":"pdf"""")
+            }
+            written("shared-fraction.obscurashared", "sharedItemsDamaged") { it.replaceFirst(""""size":9000,""", """"size":9000.0,""") }
+            written("shared-bom.obscurashared", "sharedItemsDamaged") { "\uFEFF" + it }
+            written("shared-title.obscurashared", "sharedItemsDamaged") {
+                it.replaceFirst(""""name":"Lease, """, """"name":"Lease,\n""")
+            }
+            // A zero-width space: shows nothing, so a title could hide text.
+            written("shared-invisible.obscurashared", "sharedItemsDamaged") {
+                it.replaceFirst(""""name":"Lease, """, "\"name\":\"Lease,\u200B ")
+            }
+            return cases
+        } finally {
+            plaintextFiles.forEach { it.delete() }
+        }
+    }
+
+    /** [data], an `.obscurashared` file, with two of its records swapped. */
+    fun swappingRecords(data: ByteArray, a: Int, b: Int): ByteArray {
+        val start = SharedItemsFile.HEADER_SIZE + (((data[10].toInt() and 0xFF) shl 8) or (data[11].toInt() and 0xFF))
+        val size = data.bigEndianUInt32(12).toInt() + AesGcm.OVERHEAD
+        val records = (start until data.size step size).map { data.copyOfRange(it, minOf(it + size, data.size)) }.toMutableList()
+        java.util.Collections.swap(records, a, b)
+        return records.fold(data.copyOf(start)) { acc, record -> acc + record }
     }
 
     private fun refreshChecksum(header: ByteArray) {

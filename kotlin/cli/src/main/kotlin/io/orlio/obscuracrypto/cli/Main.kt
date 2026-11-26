@@ -13,6 +13,10 @@ import io.orlio.obscuracrypto.MediaExtraction
 import io.orlio.obscuracrypto.MediaFormat
 import io.orlio.obscuracrypto.ObscuraCryptoException
 import io.orlio.obscuracrypto.SecureBytes
+import io.orlio.obscuracrypto.SharedItemsFile
+import io.orlio.obscuracrypto.SharedItemsPreamble
+import io.orlio.obscuracrypto.SharedItemsReader
+import io.orlio.obscuracrypto.SharedPassword
 import io.orlio.obscuracrypto.SingleShotMedia
 import io.orlio.obscuracrypto.VaultHeader
 import java.io.File
@@ -24,7 +28,7 @@ import java.util.UUID
 import kotlin.system.exitProcess
 
 internal val usage = """
-obscura: create, inspect and decrypt Obscura vault and media files.
+obscura: create, inspect and decrypt Obscura vault, media and shared files.
 
 VAULT
   obscura vault create <file>         Write a new vault header, prompting for a password
@@ -48,6 +52,14 @@ EXPORT
   obscura export extract <file.obscura> <out-dir>
                                       Decrypt an export's photos and videos to <out-dir>
 
+SHARED ITEMS (.obscurashared, what Send Encrypted makes)
+  obscura shared encrypt <out.obscurashared> <file>... [--generate-password | --open] [--live-photos] [--force]
+                                      Seal photos, videos and PDFs, prompting for a password
+  obscura shared verify <file.obscurashared>
+                                      Check every item without writing anything
+  obscura shared decrypt <file.obscurashared> <out-dir>
+                                      Decrypt every item to <out-dir>
+
 `vault extract` and `export extract` write only photos and videos, never the
 vault's database or the export's manifest. Media in a password-protected folder
 is not extracted: its second key lives in the vault's database.
@@ -55,9 +67,16 @@ is not extracted: its second key lives in the vault's database.
 OPTIONS
   --password-stdin    Read passwords from standard input, one per line, in the
                       order they are asked for. For scripts and tests.
-  --force             Let media encrypt and decrypt replace an existing <out>.
-                      Without it they refuse, so a mistyped path cannot
-                      overwrite one of your files.
+  --force             Let media encrypt and decrypt, and shared encrypt, replace
+                      an existing <out>. Without it they refuse, so a mistyped
+                      path cannot overwrite one of your files.
+  --generate-password shared encrypt: make a password of six random words and
+                      show it, rather than ask for one. A typed one needs 6
+                      characters; one that is easy to guess gets a note.
+  --open              shared encrypt: no password. The file holds its own key,
+                      so anyone who has the file can open it, or change it.
+  --live-photos       shared encrypt: send a photo and a video with the same
+                      name (IMG_0001.HEIC, IMG_0001.MOV) as one Live Photo.
 
 Passwords are never taken as arguments, so they stay out of shell history.
 Keys are never printed. `unlock` shows a fingerprint: the first 8 bytes of
@@ -203,16 +222,18 @@ internal class Cli(private val raw: List<String>, private val stdin: java.io.Buf
             "media" to "decrypt" -> {
                 val input = File(arguments.positional(0, "in"))
                 val output = outputFile(arguments)
+                Interruption.requirePrivateFolder(output.absoluteFile.parentFile)
                 val masterKey = unlockVault(arguments, fromStdin)
                 val folderKey = unlockFolder(arguments, fromStdin)
                 when (MediaFormat.detect(readPrefix(input, 4))) {
                     MediaFormat.CHUNKED -> {
                         val reader = ChunkedMediaReader(input)
-                        reader.decrypt(output, masterKey, folderKey)
+                        Interruption.cleaningUp(output.absoluteFile.parentFile) { reader.decrypt(output, masterKey, folderKey) }
                         out.println("Decrypted ${reader.header.chunkCount} chunks to ${output.path}")
                     }
                     MediaFormat.SINGLE_SHOT -> {
-                        replaceAtomically(output, SingleShotMedia.decrypt(input.readBytes(), masterKey, folderKey), ownerOnly = true)
+                        val plaintext = SingleShotMedia.decrypt(input.readBytes(), masterKey, folderKey)
+                        Interruption.cleaningUp(output.absoluteFile.parentFile) { replaceAtomically(output, plaintext, ownerOnly = true) }
                         out.println("Decrypted to ${output.path}")
                     }
                 }
@@ -220,17 +241,19 @@ internal class Cli(private val raw: List<String>, private val stdin: java.io.Buf
 
             "media" to "inspect" -> {
                 val file = File(arguments.positional(0, "file"))
-                val prefix = readPrefix(file, ChunkedMediaHeader.SIZE)
+                val prefix = readPrefix(file, ChunkedMediaHeader.MAXIMUM_SIZE)
                 val size = file.length()
                 when (MediaFormat.detect(prefix)) {
                     MediaFormat.CHUNKED -> {
                         val header = ChunkedMediaReader(file).header
                         fields(
-                            "Format" to "chunked (OBCM, version 1)",
+                            "Format" to "chunked (OBCM, version ${header.formatVersion})",
                             "Plaintext" to byteCount(header.totalPlaintextSize),
                             "Chunks" to "${header.chunkCount} of up to ${header.chunkPlaintextSize} bytes",
                             "Folder layer" to if (header.hasFolderLayer) "yes, 56 bytes of overhead per chunk" else "no, 28 bytes of overhead per chunk",
                             "Nonce prefix" to hex(header.noncePrefix),
+                            "Keys" to (header.keySalt?.let { "this file's own, derived with salt ${hex(it)}" }
+                                ?: "the vault's and folder's keys as they are"),
                             "File length" to "$size bytes, matches the header",
                         )
                     }
@@ -267,10 +290,13 @@ internal class Cli(private val raw: List<String>, private val stdin: java.io.Buf
                 // first, being small.
                 val ids = mediaIds(pool).sorted()
                 var extracted = 0
-                for (id in ids) {
-                    if (!opens(id, pool, masterKey)) continue
-                    val outcome = MediaExtraction.extract(File(pool, "$id.data.enc"), id, masterKey, directory = outDir)
-                    if (outcome is MediaExtraction.Outcome.Extracted) extracted += 1
+                Interruption.cleaningUp(outDir) {
+                    for (id in ids) {
+                        if (!opens(id, pool, masterKey)) continue
+                        Interruption.checkpoint()
+                        val outcome = MediaExtraction.extract(File(pool, "$id.data.enc"), id, masterKey, directory = outDir)
+                        if (outcome is MediaExtraction.Outcome.Extracted) extracted += 1
+                    }
                 }
                 fields(
                     "Extracted" to "$extracted photos and videos to ${outDir.path}",
@@ -281,17 +307,37 @@ internal class Cli(private val raw: List<String>, private val stdin: java.io.Buf
 
             "export" to "inspect" -> {
                 val file = File(arguments.positional(0, "file"))
-                val header = ExportHeader.parse(readPrefix(file, ExportHeader.SIZE))
-                fields(
+                val header = ExportHeader.parse(readPrefix(file, ExportHeader.MAXIMUM_SIZE))
+                val rows = arrayListOf(
                     "Format" to "Obscura export, version ${header.version}",
                     "Key" to "PBKDF2-HMAC-SHA256, ${header.kdfIterations} rounds, then AES-256-GCM",
                     "Salt" to hex(header.salt),
                     "Nonce prefix" to hex(header.noncePrefix),
-                    "Encrypted" to byteCount(file.length() - ExportHeader.SIZE) + " after the 64-byte header",
                 )
+                if (header.version >= 2) {
+                    rows += "Records" to "${header.recordSize} bytes each, all the same size"
+                    rows += "Other locks" to if (header.lockTypes.isEmpty()) {
+                        "none: it opens with its password only"
+                    } else {
+                        "${header.lockTypes.size} of types this version does not know (${header.lockTypes.joinToString(", ")}), passed over"
+                    }
+                }
+                rows += "Encrypted" to byteCount(file.length() - header.byteCount) + " after the ${header.byteCount}-byte header"
+                rows += "Shows" to if (header.version >= 2) {
+                    "only roughly how much it holds: the files inside, their number and sizes are sealed"
+                } else {
+                    "how many files it holds and the size of each, as every file starts a record of its own"
+                }
+                fields(*rows.toTypedArray())
             }
 
             "export" to "extract" -> exportExtract(arguments, fromStdin)
+
+            "shared" to "encrypt" -> sharedEncrypt(arguments, fromStdin)
+
+            "shared" to "verify" -> sharedVerify(arguments, fromStdin)
+
+            "shared" to "decrypt" -> sharedDecrypt(arguments, fromStdin)
 
             else -> throw CliError("unknown command \"${raw[0]} ${raw[1]}\"; run obscura with no arguments for help")
         }
@@ -315,29 +361,27 @@ internal class Cli(private val raw: List<String>, private val stdin: java.io.Buf
             var layered = 0
             // Each stored file is staged in a folder made fresh for this run, owner-only,
             // so a name someone planted in out-dir (a link, say) is never written through.
-            val staging = Files.createTempDirectory(
-                outDir.toPath(), ".obscura-staging-",
-                java.nio.file.attribute.PosixFilePermissions.asFileAttribute(
-                    java.nio.file.attribute.PosixFilePermissions.fromString("rwx------"),
-                ),
-            ).toFile()
-            try {
-                for (media in archive.index.mediaFiles) {
-                    val stored = File(staging, "${media.id}.stored")
-                    try {
-                        archive.copyStoredFile(media.dataSize, stored)
-                        archive.copyStoredFile(media.thumbnailSize, null as File?)
-                        if (media.dataSize <= 0) continue
-                        when (MediaExtraction.extract(stored, media.id, masterKey, directory = outDir)) {
-                            is MediaExtraction.Outcome.Extracted -> extracted += 1
-                            MediaExtraction.Outcome.NotOpenedByMasterKey -> layered += 1
+            Interruption.cleaningUp(outDir) {
+                val staging = Interruption.makeStaging(outDir)
+                try {
+                    for (media in archive.index.mediaFiles) {
+                        Interruption.checkpoint()
+                        val stored = File(staging, "${media.id}.stored")
+                        try {
+                            archive.copyStoredFile(media.dataSize, stored)
+                            archive.copyStoredFile(media.thumbnailSize, null as File?)
+                            if (media.dataSize <= 0) continue
+                            when (MediaExtraction.extract(stored, media.id, masterKey, directory = outDir)) {
+                                is MediaExtraction.Outcome.Extracted -> extracted += 1
+                                MediaExtraction.Outcome.NotOpenedByMasterKey -> layered += 1
+                            }
+                        } finally {
+                            stored.delete()
                         }
-                    } finally {
-                        stored.delete()
                     }
+                } finally {
+                    Interruption.removeStaging(staging)
                 }
-            } finally {
-                staging.deleteRecursively()
             }
             if (!archive.isAtEnd()) {
                 throw CliError("the export has data after its last media file; it may have been altered")
@@ -347,6 +391,150 @@ internal class Cli(private val raw: List<String>, private val stdin: java.io.Buf
                 "Not extracted" to "$layered in password-protected folders",
             )
         }
+    }
+
+    // MARK: Shared items
+
+    private fun sharedEncrypt(arguments: Arguments, fromStdin: Boolean) {
+        val path = arguments.positional(0, "out.obscurashared")
+        if (File(path).exists() && !arguments.has("force")) throw CliError("$path already exists; use --force to replace it")
+        val inputs = arguments.positionals.drop(1).map(::File)
+        if (inputs.isEmpty()) throw CliError("missing <file>: name the photos, videos and PDFs to seal")
+        val sources = SharedCommands.sources(inputs, arguments.has("live-photos"))
+
+        if (arguments.has("open") && arguments.has("generate-password")) {
+            throw CliError("--open and --generate-password do not go together")
+        }
+        var password: String? = null
+        if (arguments.has("generate-password")) {
+            password = SharedPassword.suggested()
+        } else if (!arguments.has("open")) {
+            val typed = readPassword("New password for the file: ", fromStdin, confirm = !fromStdin)
+            if (typed.codePointCount(0, typed.length) < SharedCommands.MINIMUM_PASSWORD_LENGTH) {
+                throw CliError("the password needs at least ${SharedCommands.MINIMUM_PASSWORD_LENGTH} characters, as in the app")
+            }
+            password = typed
+        }
+        val output = File(path)
+        SharedItemsFile.write(sources, password, output)
+        val rows = arrayListOf(
+            "Created" to path,
+            "Items" to SharedCommands.itemSummary(sources.map { it.kind.id }),
+            "Lock" to if (password == null) SharedCommands.OPEN_LOCK else SharedCommands.passwordLock(KeyDerivation.VAULT_ITERATIONS.toLong()),
+            "File size" to byteCount(output.length()),
+        )
+        if (arguments.has("generate-password") && password != null) {
+            rows += "Password" to "$password  (tell it to them some other way than the file)"
+        } else if (password != null) {
+            SharedPassword.problem(password)?.let { rows += "Note" to SharedCommands.explanation(it) }
+        }
+        fields(*rows.toTypedArray())
+    }
+
+    private fun sharedVerify(arguments: Arguments, fromStdin: Boolean) {
+        val file = File(arguments.positional(0, "file.obscurashared"))
+        openShared(file, fromStdin).use { reader ->
+            var bytes = 0L
+            for (item in reader.manifest.items) {
+                for (part in item.parts) {
+                    reader.skip(part)
+                    bytes += part.size
+                }
+            }
+            reader.finish()
+            val preamble = reader.preamble
+            fields(
+                "Format" to "Obscura shared items, version ${preamble.formatVersion}, readable from version ${preamble.readableBy}",
+                "Lock" to SharedCommands.lockSummary(preamble),
+                "Items" to SharedCommands.itemSummary(reader.manifest.items.map { it.kind }),
+                "Contents" to byteCount(bytes),
+                "Checked" to "every record intact and in order, every item matching its SHA-256, nothing after the last",
+                *(if (preamble.isOpen) arrayOf("Note" to SharedCommands.OPEN_NOTE) else emptyArray()),
+            )
+        }
+    }
+
+    private fun sharedDecrypt(arguments: Arguments, fromStdin: Boolean) {
+        val file = File(arguments.positional(0, "file.obscurashared"))
+        val outDir = outputDirectory(arguments)
+        openShared(file, fromStdin).use { reader -> Interruption.cleaningUp(outDir) { sharedDecrypt(reader, outDir) } }
+    }
+
+    private fun sharedDecrypt(reader: SharedItemsReader, outDir: File) {
+        // Every part is decrypted into a folder made fresh for this run, owner only, and moved out only once the
+        // whole file has checked, so nothing unverified ever appears in out-dir.
+        val staging = Interruption.makeStaging(outDir)
+        try {
+            val files = ArrayList<Pair<File, String>>()
+            val titles = ArrayList<Pair<String, String>>()
+            for ((index, item) in reader.manifest.items.withIndex()) {
+                val kind = item.knownKind
+                if (kind == null) {
+                    item.parts.forEach(reader::skip)
+                    continue
+                }
+                val extensions = ArrayList<String>()
+                for (part in item.parts) {
+                    val role = SharedItemsFile.Role.of(part.role)
+                    if (!(role == SharedItemsFile.Role.FILE || (role == SharedItemsFile.Role.MOTION && kind == SharedItemsFile.Kind.LIVE_PHOTO))) {
+                        reader.skip(part)
+                        continue
+                    }
+                    Interruption.checkpoint()
+                    val staged = File(staging, "${files.size}")
+                    Files.createFile(
+                        staged.toPath(),
+                        java.nio.file.attribute.PosixFilePermissions.asFileAttribute(
+                            java.nio.file.attribute.PosixFilePermissions.fromString("rw-------"),
+                        ),
+                    )
+                    java.io.FileOutputStream(staged).use { out ->
+                        reader.read(part) { out.write(it) }
+                        out.flush()
+                        out.fd.sync()
+                    }
+                    var name = "${index + 1}-${SharedCommands.label(kind)}"
+                    val ext = SharedCommands.fileExtension(readPrefix(staged, 16), item.type, role == SharedItemsFile.Role.MOTION)
+                    // A Live Photo's two halves share a name, as Photos exports them, unless their extensions would make them one file.
+                    if (role == SharedItemsFile.Role.MOTION && ext in extensions) name += "-motion"
+                    // A made-up file can give the motion first; its still must not then take the same name.
+                    if (files.any { it.second == "$name.$ext" }) name += "-${part.role}"
+                    extensions += ext
+                    files += staged to "$name.$ext"
+                    val title = item.name
+                    if (kind == SharedItemsFile.Kind.PDF && !title.isNullOrEmpty()) titles += "$name.$ext" to SharedCommands.printable(title)
+                }
+            }
+            reader.finish()
+
+            for ((_, name) in files) {
+                val destination = File(outDir, name)
+                // A link planted at this name counts as taken.
+                if (Files.exists(destination.toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                    throw CliError("${destination.path} already exists; decrypt into an empty folder")
+                }
+            }
+            for ((staged, name) in files) Files.move(staged.toPath(), File(outDir, name).toPath())
+            val unknown = reader.manifest.items.size - reader.supportedCount
+            val rows = arrayListOf("Decrypted" to "${reader.supportedCount} ${if (reader.supportedCount == 1) "item" else "items"} to ${outDir.path}")
+            files.forEach { rows += "" to it.second }
+            titles.forEach { rows += "Title" to "${it.first} is \"${it.second}\"" }
+            if (unknown > 0) rows += "Not decrypted" to "$unknown of a kind this version does not know, checked and read past"
+            rows += "Lock" to SharedCommands.lockSummary(reader.preamble)
+            if (reader.preamble.isOpen) rows += "Note" to SharedCommands.OPEN_NOTE
+            fields(*rows.toTypedArray())
+        } finally {
+            Interruption.removeStaging(staging)
+        }
+    }
+
+    /**
+     * Opens [file], asking at the terminal for its password only when it has one. A password given with `--password-stdin` is always
+     * used, so a script that expects a sealed file is refused one sent without a password (someone may have swapped it on the way).
+     */
+    private fun openShared(file: File, fromStdin: Boolean): SharedItemsReader {
+        val password = if (fromStdin || !SharedItemsPreamble.read(file).isOpen) readPassword("Password for the file: ", fromStdin) else null
+        return SharedItemsReader.open(file, password)
     }
 
     // MARK: Helpers
@@ -404,6 +592,7 @@ internal class Cli(private val raw: List<String>, private val stdin: java.io.Buf
     private fun outputDirectory(arguments: Arguments): File {
         val dir = File(arguments.positional(1, "out-dir"))
         Files.createDirectories(dir.toPath())
+        Interruption.requirePrivateFolder(dir)
         return dir
     }
 
@@ -417,7 +606,7 @@ internal class Cli(private val raw: List<String>, private val stdin: java.io.Buf
     private fun mediaIds(pool: File): List<String> = pool.list().orEmpty().mapNotNull { name ->
         if (!name.endsWith(".data.enc")) return@mapNotNull null
         val id = name.removeSuffix(".data.enc")
-        id.takeIf { it.length == 36 && runCatching { UUID.fromString(it) }.isSuccess }
+        id.takeIf(MediaExtraction::isMediaId)
     }
 
     /** Whether [masterKey] opens a stored file, trying its thumbnail first. */

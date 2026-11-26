@@ -126,7 +126,7 @@ public struct VaultHeader: Sendable, Equatable {
         let passwordKey = try KeyDerivation.pbkdf2SHA256(password: password, salt: salt, iterations: KeyDerivation.vaultIterations)
         let header = VaultHeader(
             salt: salt,
-            wrappedMasterKey: try masterKey.withUnsafeBytes { try AESGCM.seal($0, key: passwordKey) },
+            wrappedMasterKey: try masterKey.withKeyBytes { try AESGCM.seal($0, key: passwordKey) },
             encryptedDatabaseSize: try encryptDatabaseSize(databaseSize, masterKey: masterKey)
         )
         return (header, masterKey)
@@ -159,7 +159,7 @@ public struct VaultHeader: Sendable, Equatable {
             cipherSuite: cipherSuite,
             kdfIterations: KeyDerivation.vaultIterations,
             salt: newSalt,
-            wrappedMasterKey: try masterKey.withUnsafeBytes { try AESGCM.seal($0, key: newPasswordKey) },
+            wrappedMasterKey: try masterKey.withKeyBytes { try AESGCM.seal($0, key: newPasswordKey) },
             encryptedDatabaseSize: encryptedDatabaseSize
         )
     }
@@ -178,6 +178,7 @@ public struct VaultHeader: Sendable, Equatable {
     /// the old password is not known but the master key is, from a recovery
     /// phrase. Refuses a key that is not this vault's.
     public func settingPassword(_ newPassword: String, masterKey: SecureBytes) throws -> VaultHeader {
+        try masterKey.checkNotCleared()
         guard opens(masterKey: masterKey) else {
             throw ObscuraCryptoError.authenticationFailed
         }
@@ -187,7 +188,7 @@ public struct VaultHeader: Sendable, Equatable {
             cipherSuite: cipherSuite,
             kdfIterations: KeyDerivation.vaultIterations,
             salt: newSalt,
-            wrappedMasterKey: try masterKey.withUnsafeBytes { try AESGCM.seal($0, key: newPasswordKey) },
+            wrappedMasterKey: try masterKey.withKeyBytes { try AESGCM.seal($0, key: newPasswordKey) },
             encryptedDatabaseSize: encryptedDatabaseSize
         )
     }

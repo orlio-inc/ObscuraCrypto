@@ -23,8 +23,8 @@ import java.security.MessageDigest
  * cannot be revoked short of re-encrypting the vault under a new key.
  *
  * The checksum byte catches a mistyped phrase before any vault is tried. It is
- * public arithmetic on the key, so it costs an attacker nothing to compute;
- * 248 bits remain to be guessed.
+ * computed from the key, so it adds nothing to guess and takes nothing away:
+ * the key's 256 bits remain to be guessed.
  *
  * As with [SecureBytes], the JVM cannot promise that no copy of the words or
  * the key outlives this object; the working arrays are zeroed after use.

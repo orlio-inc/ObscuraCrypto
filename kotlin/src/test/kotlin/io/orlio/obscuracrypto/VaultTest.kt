@@ -125,6 +125,24 @@ class VaultTest : CryptoTestCase() {
         assertRefused<ObscuraCryptoException.WrongPassword> { created.protection.unlock("folder pasS") }
     }
 
+    /** New folder passwords take a vault's rounds: the stored hash is that of the key derived at 600,000. */
+    @Test
+    fun aNewFolderPasswordUsesAVaultsRounds() {
+        val created = FolderProtection.create("folder pass")
+        val key = KeyDerivation.pbkdf2SHA256("folder pass", created.protection.salt, 600_000)
+        assertTrue(key.withBytes { java.security.MessageDigest.getInstance("SHA-256").digest(it) }.contentEquals(created.protection.passwordHash))
+    }
+
+    /** Folders protected before keep their 100,000 rounds, and still open. */
+    @Test
+    fun aFolderFromBeforeStillOpens() {
+        val created = FolderProtection.create("old folder", 100_000)
+        val key = KeyDerivation.pbkdf2SHA256("old folder", created.protection.salt, 100_000)
+        assertTrue(key.withBytes { java.security.MessageDigest.getInstance("SHA-256").digest(it) }.contentEquals(created.protection.passwordHash))
+        assertTrue(created.protection.unlock("old folder").contentEquals(created.folderKey))
+        assertRefused<ObscuraCryptoException.WrongPassword> { created.protection.unlock("old foldeR") }
+    }
+
     @Test
     fun folderProtectionRefusesWronglySizedFields() {
         assertRefused<ObscuraCryptoException.InvalidFolderProtection> {

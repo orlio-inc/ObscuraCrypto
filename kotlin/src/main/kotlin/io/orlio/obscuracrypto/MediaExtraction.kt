@@ -22,6 +22,9 @@ object MediaExtraction {
         object NotOpenedByMasterKey : Outcome()
     }
 
+    /** A media ID as the apps write them: a UUID in the 36-character 8-4-4-4-12 form, in either case. The Swift package's `isMediaID`. */
+    fun isMediaId(id: String): Boolean = isCanonicalUuid(id)
+
     /**
      * Decrypts a stored `.data.enc` file, single-shot or chunked, into
      * [directory] as `<id>.<extension>`, the extension chosen from what the
@@ -38,7 +41,7 @@ object MediaExtraction {
         folderKey: SecureBytes? = null,
         directory: File,
     ): Outcome {
-        if (!isCanonicalUuid(id)) throw ObscuraCryptoException.InvalidExport("$id is not a media ID")
+        if (!isCanonicalUuid(id)) throw ObscuraCryptoException.InvalidExport("not a media ID")
         val temporary = privateTemporaryFile(File(directory, id))
         try {
             val prefix = readPrefix(storedFile, 4)
@@ -103,6 +106,7 @@ object MediaExtraction {
         if (starts(byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte()))) return "jpg"
         if (starts(byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47))) return "png"
         if (starts(ascii("GIF8"))) return "gif"
+        if (starts(ascii("%PDF"))) return "pdf"
         if (starts(ascii("RIFF")) && starts(ascii("WEBP"), 8)) return "webp"
         if (starts(byteArrayOf(0x49, 0x49, 0x2A, 0x00)) || starts(byteArrayOf(0x4D, 0x4D, 0x00, 0x2A))) return "tiff"
         if (starts(ascii("ftyp"), 4) && bytes.size >= 12) {

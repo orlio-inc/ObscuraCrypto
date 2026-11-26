@@ -38,7 +38,7 @@ internal object FolderFile {
         val root = try {
             Json.parseToJsonElement(text).jsonObject
         } catch (e: Exception) {
-            throw CliError("not a folder file: ${e.message}")
+            throw CliError("not a folder file: its JSON cannot be read")
         }
         fun field(name: String): ByteArray {
             val value = root[name]?.jsonPrimitive?.contentOrNull ?: throw CliError("folder file has no $name")

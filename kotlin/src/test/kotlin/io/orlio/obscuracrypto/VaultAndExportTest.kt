@@ -198,6 +198,29 @@ class VaultAndExportTest : CryptoTestCase() {
         assertContentEquals(Fixtures.file("vault.obscura").readBytes().copyOf(64), header.serialized())
     }
 
+    @Test
+    fun version2HeaderLayout() {
+        val out = ByteArrayOutputStream()
+        val writer = ExportWriter.begin(out, "pw")
+        val bytes = out.toByteArray()
+        assertEquals(97, bytes.size, "the header and a key block of one byte")
+        assertContentEquals("OBSV".toByteArray(), bytes.copyOf(4))
+        assertContentEquals(byteArrayOf(0, 2, 0, 2, 0, 0, 0, 1, 0, 0x10, 0, 0), bytes.copyOfRange(4, 16))
+        assertContentEquals(writer.header.salt, bytes.copyOfRange(16, 48))
+        assertEquals(600_000L, bytes.bigEndianUInt32(48))
+        assertContentEquals(writer.header.noncePrefix, bytes.copyOfRange(52, 56))
+        val exportKey = KeyDerivation.pbkdf2SHA256("pw", writer.header.salt, 600_000)
+        // HKDF-SHA256 over the export key, salt 32 zero bytes, info "OBSV v2 key commitment".
+        assertContentEquals(SpecFile.subkey(exportKey.toByteArray(), "OBSV v2 key commitment"), bytes.copyOfRange(56, 88))
+        assertContentEquals(ByteArray(8), bytes.copyOfRange(88, 96))
+        assertEquals(0, bytes[96].toInt(), "no locks beside the password")
+        val header = ExportHeader.parse(bytes)
+        assertEquals(emptyList(), header.lockTypes)
+        assertEquals(2, header.version)
+        assertEquals(2, header.readableBy)
+        assertEquals(1_048_576, header.recordSize)
+    }
+
     // MARK: Writing an export
 
     /** What the writer produces, the reader (which reads the iOS app's exports) takes back. */
@@ -245,6 +268,62 @@ class VaultAndExportTest : CryptoTestCase() {
             assertTrue(archive.isAtEnd())
         }
         assertRefused<ObscuraCryptoException.WrongPassword> { ExportArchive.open(out.toByteArray().inputStream(), "other") }
+
+        // Version 2: whole records of one size after the header, the content padded to its Padmé length.
+        val written = out.toByteArray()
+        val writtenHeader = ExportHeader.parse(written)
+        assertEquals(2, writtenHeader.version)
+        val headerSize = writtenHeader.byteCount
+        val recordBytes = ExportWriter.RECORD_SIZE + AesGcm.OVERHEAD
+        assertEquals(0, (written.size - headerSize) % recordBytes)
+        val content = 4L + manifestJson.toByteArray().size + vaultFile.size + media.sumOf { it.size } + thumbs.sumOf { it.size }
+        val records = (SharedItemsFile.padme(content) + ExportWriter.RECORD_SIZE - 1) / ExportWriter.RECORD_SIZE
+        assertEquals(records, ((written.size - headerSize) / recordBytes).toLong())
+        var reported = 0L
+        ExportArchive.verify(written.inputStream(), "export password") { done, total ->
+            assertTrue(done in reported..total)
+            reported = done
+        }
+        assertEquals(content - 4 - manifestJson.toByteArray().size, reported)
+    }
+
+    private fun manifestFor(created: VaultHeader.Created, databaseSize: Int, media: String = ""): ByteArray {
+        val b64 = java.util.Base64.getEncoder()
+        return ("{\"exportVersion\":1,\"vaultSalt\":\"${b64.encodeToString(created.header.salt)}\"," +
+            "\"encryptedMEK\":\"${b64.encodeToString(created.header.wrappedMasterKey)}\"," +
+            "\"databaseSize\":$databaseSize,\"mediaFiles\":[$media]}").toByteArray()
+    }
+
+    @Test
+    fun theWriterRefusesToWriteOtherThanWhatTheManifestLists() {
+        val json = manifestFor(VaultHeader.create("pw"), 10)
+        val short = ExportWriter.begin(ByteArrayOutputStream(), "pw").apply { writeManifest(json) }
+        short.writeFile(ByteArray(9).inputStream(), 9)
+        assertRefused<ObscuraCryptoException.InvalidExport> { short.finish() }
+        val long = ExportWriter.begin(ByteArrayOutputStream(), "pw").apply { writeManifest(json) }
+        assertRefused<ObscuraCryptoException.InvalidExport> { long.writeFile(ByteArray(11).inputStream(), 11) }
+    }
+
+    /** Files share version 2 records: each still reads back as its own bytes, an empty one included. */
+    @Test
+    fun smallRecordsAcrossFilesReadBackWhole() {
+        val files = listOf(randomBytes(10), randomBytes(9_000), ByteArray(0), randomBytes(1), randomBytes(4_096))
+        val entries = "{\"mediaId\":\"A3E42A38-8C9A-483D-BAE4-1AEE61FF133A\",\"dataSize\":${files[1].size},\"thumbSize\":0}," +
+            "{\"mediaId\":\"B73D3715-51FA-4CFD-81F8-863C3D37D73F\",\"dataSize\":${files[3].size},\"thumbSize\":${files[4].size}}"
+        val out = ByteArrayOutputStream()
+        val writer = ExportWriter.begin(out, "pw", KeyDerivation.VAULT_ITERATIONS, 4_096)
+        writer.writeManifest(manifestFor(VaultHeader.create("pw"), files[0].size, entries))
+        for (file in files) writer.writeFile(file.inputStream(), file.size.toLong())
+        writer.finish()
+        ExportArchive.open(out.toByteArray().inputStream(), "pw").use { archive ->
+            assertEquals(4_096, archive.header.recordSize)
+            for (file in files) {
+                val copy = ByteArrayOutputStream()
+                archive.copyStoredFile(file.size.toLong(), copy)
+                assertContentEquals(file, copy.toByteArray())
+            }
+            assertTrue(archive.isAtEnd())
+        }
     }
 
     @Test
@@ -260,10 +339,13 @@ class VaultAndExportTest : CryptoTestCase() {
                 "encryptedMEK":"${java.util.Base64.getEncoder().encodeToString(created.header.wrappedMasterKey)}","databaseSize":0,
                 "mediaFiles":[{"mediaId":"$mediaId","dataSize":0,"thumbSize":0}]}"""
             val out = ByteArrayOutputStream()
-            ExportWriter.begin(out, "pw").writeManifest(json.toByteArray())
+            ExportWriterVersion1.begin(out, "pw").writeManifest(json.toByteArray())
             return out.toByteArray()
         }
         assertRefused<ObscuraCryptoException.InvalidExport> { ExportArchive.open(archiveWith("../../etc").inputStream(), "pw") }
         ExportArchive.open(archiveWith("A3E42A38-8C9A-483D-BAE4-1AEE61FF133A").inputStream(), "pw").close()
+        // The writer refuses such a manifest before writing a record.
+        val hostile = manifestFor(created, 0, "{\"mediaId\":\"../../etc\",\"dataSize\":0,\"thumbSize\":0}")
+        assertRefused<ObscuraCryptoException.InvalidExport> { ExportWriter.begin(ByteArrayOutputStream(), "pw").writeManifest(hostile) }
     }
 }

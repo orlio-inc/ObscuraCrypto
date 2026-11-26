@@ -11,82 +11,154 @@ import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.nio.file.attribute.PosixFilePermissions
 import java.util.UUID
+import javax.crypto.Mac
+import javax.crypto.spec.SecretKeySpec
 
 /**
- * The 25-byte header of a chunked media file.
+ * The header of a chunked media file: 57 bytes in version 2, which new files
+ * are written in, and 25 in version 1.
  *
  * ```
  * offset  size  field
  *      0     4  magic, "OBCM"
- *      4     1  version, 0x01
+ *      4     1  version, 0x02 (0x01 for files written before ObscuraCrypto 1.2.0 / Kotlin 1.3.0)
  *      5     4  nonce prefix, random per file
  *      9     8  total plaintext length, big-endian UInt64
  *     17     4  plaintext bytes per chunk, big-endian UInt32 (1 MiB by default)
  *     21     4  flags, big-endian UInt32; bit 0 set means a folder layer
+ *     25    32  key salt, random per file (version 2 only)
  * ```
  *
  * Chunks follow at fixed offsets, so chunk `i` starts at
- * `25 + i * (chunkSize + overhead)`. Each chunk is AES-GCM combined,
+ * `byteCount + i * (chunkSize + overhead)`. Each chunk is AES-GCM combined,
  * `nonce || ciphertext || tag`; only the last can be shorter.
  *
  * Nonces are derived, not random: `noncePrefix (4) || i (8, big-endian)`. The
- * random prefix keeps files apart and the index keeps chunks apart. A folder
- * layer seals each master-encrypted chunk again with the folder key, numbering
- * its nonces on from `chunkCount` so the two layers never share one; its
- * chunks carry 56 bytes of overhead instead of 28.
+ * index keeps chunks apart. A folder layer seals each master-encrypted chunk
+ * again with the folder key, numbering its nonces on from `chunkCount` so the
+ * two layers never share one; its chunks carry 56 bytes of overhead instead
+ * of 28.
+ *
+ * Version 2 also marks the end. The master layer of a file's last chunk sets
+ * the counter's top bit ([LAST_CHUNK_FLAG]), and a file always has at least
+ * one chunk (an empty file one empty chunk). A file cut short at a chunk
+ * boundary, with its recorded length changed to match, ends on an unmarked
+ * chunk and is refused; in version 1 it opened, shorter.
+ *
+ * What keeps files apart differs by version. Version 1 seals every file under
+ * the vault's keys themselves, so two files are kept apart only by their
+ * 4-byte prefixes, and two that draw the same one (about 1 in 90 for 10,000
+ * files under one key) reuse each other's nonces. Version 2 seals each file
+ * under keys of its own, derived from the vault's keys and the file's random
+ * salt ([ChunkedMediaCipher]), so files never share a key and the prefix no
+ * longer carries that weight.
  *
  * Sizes are Longs. The two unsigned fields that could exceed a Long's range,
  * the total length and the chunk size, are accepted only when the file they
  * describe fits in one, which is every real file.
  */
-class ChunkedMediaHeader(
+class ChunkedMediaHeader internal constructor(
+    val formatVersion: Byte,
     noncePrefix: ByteArray,
+    keySalt: ByteArray?,
     val totalPlaintextSize: Long,
     val chunkPlaintextSize: Long,
     val flags: Long,
 ) {
     val noncePrefix: ByteArray = noncePrefix.copyOf()
 
+    /** The salt each layer's key is derived with; null in version 1, which uses the vault's keys as they are. */
+    val keySalt: ByteArray? = keySalt?.copyOf()
+
+    /**
+     * A version 1 header, as files written before version 2 have. New files get a version 2 header from [make], and a
+     * rewrite that adds or removes a folder layer keeps its file's header with [settingFolderLayer]: building the
+     * rewritten header with this instead would drop a version 2 file's salt and leave it unopenable, so it no longer
+     * compiles.
+     */
+    @Deprecated(
+        "Makes a version 1 header. Use settingFolderLayer() to change a file's folder layer, make() for a new file, " +
+            "or parse() for a file's own header.",
+        level = DeprecationLevel.ERROR,
+    )
+    constructor(noncePrefix: ByteArray, totalPlaintextSize: Long, chunkPlaintextSize: Long, flags: Long) :
+        this(0x01, noncePrefix, null, totalPlaintextSize, chunkPlaintextSize, flags)
+
     init {
+        when {
+            formatVersion.toInt() == 0x01 && keySalt == null -> {}
+            formatVersion.toInt() == 0x02 && keySalt != null && keySalt.size == KEY_SALT_SIZE -> {}
+            formatVersion.toInt() == 0x01 || formatVersion.toInt() == 0x02 ->
+                throw ObscuraCryptoException.InvalidChunkedHeader("key salt does not match version $formatVersion")
+            else -> throw ObscuraCryptoException.InvalidChunkedHeader(
+                "version 0x%02x, expected 0x01 or 0x02".format(formatVersion.toInt() and 0xFF)
+            )
+        }
         if (noncePrefix.size != NONCE_PREFIX_SIZE) {
             throw ObscuraCryptoException.InvalidChunkedHeader("nonce prefix is not 4 bytes")
         }
-        if (chunkPlaintextSize <= 0 || chunkPlaintextSize > UINT32_MAX) {
+        if (chunkPlaintextSize <= 0) {
             throw ObscuraCryptoException.InvalidChunkedHeader("chunk size is zero")
+        }
+        if (chunkPlaintextSize > MAXIMUM_CHUNK_SIZE) {
+            throw ObscuraCryptoException.InvalidChunkedHeader("chunk size above 1 GiB")
+        }
+        // Version 2 defines bit 0 only. The flags are not sealed into the
+        // chunks, so a reader that let the others pass would open a file whose
+        // header had been changed.
+        if (formatVersion.toInt() != 0x01 && flags and FOLDER_LAYER_FLAG.inv() != 0L) {
+            throw ObscuraCryptoException.InvalidChunkedHeader("flags 0x%08x, only bit 0 is defined".format(flags))
         }
         // Every size and offset derived from the header has to fit in a Long.
         // Checked here, once, so the plain arithmetic below can never wrap: a
         // header claiming an impossible length is refused as invalid instead of
         // misbehaving for whoever opened the file.
-        if (totalPlaintextSize < 0 ||
-            checkedFileSize(totalPlaintextSize, chunkPlaintextSize, flags and FOLDER_LAYER_FLAG != 0L) == null
+        if (totalPlaintextSize < 0 || checkedFileSize(
+                formatVersion, totalPlaintextSize, chunkPlaintextSize, flags and FOLDER_LAYER_FLAG != 0L,
+            ) == null
         ) {
             throw ObscuraCryptoException.InvalidChunkedHeader("its length is too large to be a real file")
         }
     }
 
     fun serialized(): ByteArray {
-        val data = ByteArray(SIZE)
+        val data = ByteArray(byteCount)
         System.arraycopy(MAGIC, 0, data, 0, 4)
-        data[4] = VERSION
+        data[4] = formatVersion
         System.arraycopy(noncePrefix, 0, data, 5, 4)
         System.arraycopy(bigEndianBytes(totalPlaintextSize, 8), 0, data, 9, 8)
         System.arraycopy(bigEndianBytes(chunkPlaintextSize, 4), 0, data, 17, 4)
         System.arraycopy(bigEndianBytes(flags, 4), 0, data, 21, 4)
+        keySalt?.let { System.arraycopy(it, 0, data, 25, KEY_SALT_SIZE) }
         return data
     }
 
+    /** This header's length, where its first chunk starts. */
+    val byteCount: Int get() = byteCount(formatVersion)
+
+    /**
+     * The same file with its folder layer flag set or cleared, for a rewrite
+     * that adds or removes the layer in place. Everything else, the version,
+     * prefix and salt included, stays: the master layer is not touched.
+     */
+    fun settingFolderLayer(hasFolderLayer: Boolean): ChunkedMediaHeader = ChunkedMediaHeader(
+        formatVersion, noncePrefix, keySalt, totalPlaintextSize, chunkPlaintextSize,
+        if (hasFolderLayer) flags or FOLDER_LAYER_FLAG else flags and FOLDER_LAYER_FLAG.inv(),
+    )
+
     val hasFolderLayer: Boolean get() = flags and FOLDER_LAYER_FLAG != 0L
 
-    val chunkCount: Long get() = chunkCount(totalPlaintextSize, chunkPlaintextSize)
+    /** Version 2 files have one chunk at least: an empty file's is empty and carries the end mark. */
+    val chunkCount: Long get() = chunkCount(formatVersion, totalPlaintextSize, chunkPlaintextSize)
 
     /** Bytes each chunk adds: 28 for one layer, 56 for two. */
     val chunkOverhead: Int get() = AesGcm.OVERHEAD * (if (hasFolderLayer) 2 else 1)
 
-    fun chunkOffset(index: Long): Long = SIZE + index * (chunkPlaintextSize + chunkOverhead)
+    fun chunkOffset(index: Long): Long = byteCount + index * (chunkPlaintextSize + chunkOverhead)
 
     fun plaintextSize(chunk: Long): Long {
         if (chunk != chunkCount - 1) return chunkPlaintextSize
+        if (totalPlaintextSize == 0L) return 0
         val remainder = totalPlaintextSize % chunkPlaintextSize
         return if (remainder == 0L) chunkPlaintextSize else remainder
     }
@@ -95,76 +167,120 @@ class ChunkedMediaHeader(
 
     /** How long a file with this header must be. */
     val fileSize: Long
-        get() = if (chunkCount == 0L) SIZE.toLong() else chunkOffset(chunkCount - 1) + encryptedSize(chunkCount - 1)
+        get() = if (chunkCount == 0L) byteCount.toLong() else chunkOffset(chunkCount - 1) + encryptedSize(chunkCount - 1)
 
     /** `noncePrefix || counter`, the counter as 8 big-endian bytes. */
     fun nonce(counter: Long): ByteArray = noncePrefix + bigEndianBytes(counter, 8)
 
     /** The nonce of chunk [index]'s master layer. */
-    fun masterNonce(chunk: Long): ByteArray = nonce(chunk)
+    fun masterNonce(chunk: Long): ByteArray = masterNonce(chunk, isLast = chunk == chunkCount - 1)
+
+    /** Version 2 marks the last chunk, so a file cut short is refused; the index alone never reaches the top bit. */
+    internal fun masterNonce(chunk: Long, isLast: Boolean): ByteArray =
+        nonce(chunk or (if (formatVersion.toInt() >= 0x02 && isLast) LAST_CHUNK_FLAG else 0L))
 
     /** The nonce of chunk [index]'s folder layer, numbered on past the last chunk. */
     fun folderNonce(chunk: Long): ByteArray = nonce(chunkCount + chunk)
 
     override fun equals(other: Any?): Boolean =
-        other is ChunkedMediaHeader && noncePrefix.contentEquals(other.noncePrefix) &&
+        other is ChunkedMediaHeader && formatVersion == other.formatVersion &&
+            noncePrefix.contentEquals(other.noncePrefix) && keySalt.contentEquals(other.keySalt) &&
             totalPlaintextSize == other.totalPlaintextSize && chunkPlaintextSize == other.chunkPlaintextSize &&
             flags == other.flags
 
     override fun hashCode(): Int = noncePrefix.contentHashCode()
 
     companion object {
-        const val SIZE = 25
+        /** What a reader needs to have read to parse a header of any version. */
+        const val MAXIMUM_SIZE = 57
         val MAGIC: ByteArray = "OBCM".toByteArray(Charsets.US_ASCII)
-        const val VERSION: Byte = 0x01
+        /** The version new files are written in. */
+        const val CURRENT_VERSION: Byte = 0x02
         const val DEFAULT_CHUNK_SIZE = 1_048_576L
-        const val NONCE_PREFIX_SIZE = 4
-        const val FOLDER_LAYER_FLAG = 0x01L
-        private const val UINT32_MAX = 0xFFFF_FFFFL
 
         /**
-         * A header for a new file, with a fresh random nonce prefix.
+         * The largest chunk a reader takes, so a made-up header cannot ask for gigabytes of memory per chunk (the JVM cannot hold a chunk
+         * over 2 GB at all). Writers use 1 MB.
+         */
+        const val MAXIMUM_CHUNK_SIZE = 1L shl 30
+        const val NONCE_PREFIX_SIZE = 4
+        const val KEY_SALT_SIZE = 32
+        const val FOLDER_LAYER_FLAG = 0x01L
+
+        /** The size of a version 1 header, the only version before version 2. */
+        @Deprecated("a version 1 header's size: read MAXIMUM_SIZE bytes to parse any header, and use byteCount for where its chunks start")
+        const val SIZE = 25
+
+        /** The version files were written in before version 2. */
+        @Deprecated("the version Kotlin 1.2.0 and earlier wrote; a header's own is formatVersion", ReplaceWith("CURRENT_VERSION"))
+        const val VERSION: Byte = 0x01
+
+        /**
+         * A header for a new file: the current version, with a fresh random
+         * nonce prefix and key salt.
          *
-         * The prefix is what keeps two files encrypted under the same master
-         * key from ever sharing a nonce, so it is always drawn here, from the
-         * system generator, and never supplied by a caller.
+         * The salt is what keeps two files encrypted under the same master key
+         * from ever sharing a key, and so a nonce, so it is always drawn here,
+         * from the system generator, and never supplied by a caller.
          */
         fun make(
             totalPlaintextSize: Long,
             chunkPlaintextSize: Long = DEFAULT_CHUNK_SIZE,
             hasFolderLayer: Boolean = false,
+        ): ChunkedMediaHeader = make(totalPlaintextSize, chunkPlaintextSize, hasFolderLayer, CURRENT_VERSION)
+
+        /** [make] in a chosen version: version 1 only for tests and fixtures that need a file as older releases wrote it. */
+        internal fun make(
+            totalPlaintextSize: Long, chunkPlaintextSize: Long, hasFolderLayer: Boolean, formatVersion: Byte,
         ): ChunkedMediaHeader = ChunkedMediaHeader(
+            formatVersion = formatVersion,
             noncePrefix = Random.bytes(NONCE_PREFIX_SIZE),
+            keySalt = if (formatVersion.toInt() == 0x01) null else Random.bytes(KEY_SALT_SIZE),
             totalPlaintextSize = totalPlaintextSize,
             chunkPlaintextSize = chunkPlaintextSize,
             flags = if (hasFolderLayer) FOLDER_LAYER_FLAG else 0,
         )
 
+        /** Parses the header at the start of [data], which should hold [MAXIMUM_SIZE] bytes or the whole file if it is shorter. */
         fun parse(data: ByteArray): ChunkedMediaHeader {
-            if (data.size < SIZE) throw ObscuraCryptoException.InvalidChunkedHeader("shorter than $SIZE bytes")
-            val header = data.copyOf(SIZE)
-            if (!header.startsWith(MAGIC)) throw ObscuraCryptoException.InvalidChunkedHeader("missing OBCM magic")
-            if (header[4] != VERSION) {
+            val shortest = byteCount(0x01)
+            if (data.size < shortest) throw ObscuraCryptoException.InvalidChunkedHeader("shorter than $shortest bytes")
+            val bytes = data.copyOf(minOf(data.size, MAXIMUM_SIZE))
+            if (!bytes.startsWith(MAGIC)) throw ObscuraCryptoException.InvalidChunkedHeader("missing OBCM magic")
+            val version = bytes[4]
+            if (version.toInt() != 0x01 && version.toInt() != 0x02) {
                 throw ObscuraCryptoException.InvalidChunkedHeader(
-                    "version 0x%02x, expected 0x01".format(header[4].toInt() and 0xFF)
+                    "version 0x%02x, expected 0x01 or 0x02".format(version.toInt() and 0xFF)
                 )
             }
+            val size = byteCount(version)
+            if (bytes.size < size) throw ObscuraCryptoException.InvalidChunkedHeader("shorter than $size bytes")
             return ChunkedMediaHeader(
-                noncePrefix = header.range(5, 9),
-                totalPlaintextSize = header.bigEndianInt64(9),
-                chunkPlaintextSize = header.bigEndianUInt32(17),
-                flags = header.bigEndianUInt32(21),
+                formatVersion = version,
+                noncePrefix = bytes.range(5, 9),
+                keySalt = if (version.toInt() == 0x01) null else bytes.range(25, 57),
+                totalPlaintextSize = bytes.bigEndianInt64(9),
+                chunkPlaintextSize = bytes.bigEndianUInt32(17),
+                flags = bytes.bigEndianUInt32(21),
             )
         }
 
+        private fun byteCount(version: Byte): Int = if (version.toInt() == 0x01) 25 else 57
+
+        /** Set in the master-layer counter of a version 2 file's last chunk. */
+        internal const val LAST_CHUNK_FLAG: Long = 1L shl 63
+
         /** Rounded up without adding first, so it cannot overflow. */
-        private fun chunkCount(total: Long, chunk: Long): Long = total / chunk + (if (total % chunk == 0L) 0 else 1)
+        private fun chunkCount(version: Byte, total: Long, chunk: Long): Long {
+            val count = total / chunk + (if (total % chunk == 0L) 0 else 1)
+            return if (version.toInt() == 0x01) count else maxOf(count, 1L)
+        }
 
         /** The file length a header describes, or null if it does not fit in a Long. */
-        private fun checkedFileSize(total: Long, chunk: Long, hasFolderLayer: Boolean): Long? = try {
+        private fun checkedFileSize(version: Byte, total: Long, chunk: Long, hasFolderLayer: Boolean): Long? = try {
             val overhead = (AesGcm.OVERHEAD * (if (hasFolderLayer) 2 else 1)).toLong()
-            val encrypted = Math.multiplyExact(chunkCount(total, chunk), overhead)
-            Math.addExact(Math.addExact(encrypted, total), SIZE.toLong())
+            val encrypted = Math.multiplyExact(chunkCount(version, total, chunk), overhead)
+            Math.addExact(Math.addExact(encrypted, total), byteCount(version).toLong())
         } catch (e: ArithmeticException) {
             null
         }
@@ -198,7 +314,9 @@ class ChunkedMediaCipher(
         AesGcm.checkKey(masterKey)
         if (folderKey != null) AesGcm.checkKey(folderKey)
         // Kept as the caller's keys, not copied into key specs: closing a key
-        // then stops this cipher too, and no copy outlives it.
+        // then stops this cipher too, and no copy outlives it. A version 2
+        // file's layer keys are derived from them for each chunk, for the same
+        // reason.
         master = masterKey
         folder = folderKey
     }
@@ -256,26 +374,26 @@ class ChunkedMediaCipher(
 
     private fun sealMaster(plaintext: ByteArray, chunk: Long): ByteArray {
         checkIndex(chunk)
-        return AesGcm.seal(plaintext, master.secretKey(), header.masterNonce(chunk))
+        return AesGcm.seal(plaintext, layerKey(master, header, MASTER_LAYER_INFO), header.masterNonce(chunk))
     }
 
     private fun sealFolder(inner: ByteArray, chunk: Long): ByteArray {
         checkIndex(chunk)
         val key = folder ?: throw ObscuraCryptoException.AuthenticationFailed()
-        return AesGcm.seal(inner, key.secretKey(), header.folderNonce(chunk))
+        return AesGcm.seal(inner, layerKey(key, header, FOLDER_LAYER_INFO), header.folderNonce(chunk))
     }
 
     private fun openMaster(sealed: ByteArray, chunk: Long): ByteArray {
         checkIndex(chunk)
         if (!hasNonce(sealed, header.masterNonce(chunk))) throw ObscuraCryptoException.ChunkNonceMismatch(chunk)
-        return AesGcm.open(sealed, master.secretKey())
+        return AesGcm.open(sealed, layerKey(master, header, MASTER_LAYER_INFO))
     }
 
     private fun openFolder(stored: ByteArray, chunk: Long): ByteArray {
         checkIndex(chunk)
         val key = folder ?: throw ObscuraCryptoException.AuthenticationFailed()
         if (!hasNonce(stored, header.folderNonce(chunk))) throw ObscuraCryptoException.ChunkNonceMismatch(chunk)
-        return AesGcm.open(stored, key.secretKey())
+        return AesGcm.open(stored, layerKey(key, header, FOLDER_LAYER_INFO))
     }
 
     private fun hasNonce(sealed: ByteArray, nonce: ByteArray): Boolean =
@@ -284,6 +402,54 @@ class ChunkedMediaCipher(
     /** Refuses a negative index. Readers check the upper bound against the header first. */
     private fun checkIndex(index: Long) {
         if (index < 0) throw ObscuraCryptoException.ChunkIndexOutOfRange(index)
+    }
+
+    internal companion object {
+        val MASTER_LAYER_INFO: ByteArray = "OBCM v2 master layer".toByteArray(Charsets.US_ASCII)
+        val FOLDER_LAYER_INFO: ByteArray = "OBCM v2 folder layer".toByteArray(Charsets.US_ASCII)
+
+        /**
+         * The key that seals one layer of this file. Version 1 uses the vault's
+         * key as it is. Version 2 derives one for the file: HKDF-SHA256 with the
+         * header's random salt, and an info string naming the layer, so the two
+         * layers' keys differ too.
+         */
+        fun layerKey(key: SecureBytes, header: ChunkedMediaHeader, info: ByteArray): SecretKeySpec {
+            val salt = header.keySalt ?: return key.secretKey()
+            val derived = key.withBytes { hkdfSha256(it, salt, info, 32) }
+            // The spec keeps its own copy.
+            return try { SecretKeySpec(derived, "AES") } finally { derived.fill(0) }
+        }
+
+        /** HKDF-SHA256 (RFC 5869): extract with [salt], expand with [info]. The caller zeroes the result. */
+        fun hkdfSha256(inputKey: ByteArray, salt: ByteArray, info: ByteArray, length: Int): ByteArray {
+            val mac = Mac.getInstance("HmacSHA256")
+            mac.init(SecretKeySpec(salt, "HmacSHA256"))
+            val pseudorandomKey = mac.doFinal(inputKey)
+            val output = ByteArray(length)
+            var block = ByteArray(0)
+            try {
+                mac.init(SecretKeySpec(pseudorandomKey, "HmacSHA256"))
+                var written = 0
+                var counter = 1
+                while (written < length) {
+                    mac.update(block)
+                    mac.update(info)
+                    mac.update(counter.toByte())
+                    val next = mac.doFinal()
+                    block.fill(0)
+                    block = next
+                    val take = minOf(block.size, length - written)
+                    System.arraycopy(block, 0, output, written, take)
+                    written += take
+                    counter += 1
+                }
+                return output
+            } finally {
+                pseudorandomKey.fill(0)
+                block.fill(0)
+            }
+        }
     }
 }
 
@@ -304,12 +470,18 @@ object ChunkedMediaEncryptor {
         masterKey: SecureBytes,
         folderKey: SecureBytes? = null,
         chunkSize: Long = ChunkedMediaHeader.DEFAULT_CHUNK_SIZE,
+    ): ChunkedMediaHeader = encrypt(source, destination, masterKey, folderKey, chunkSize, ChunkedMediaHeader.CURRENT_VERSION)
+
+    /** [encrypt] in a chosen version: version 1 only for tests and fixtures. */
+    internal fun encrypt(
+        source: File, destination: File, masterKey: SecureBytes, folderKey: SecureBytes?, chunkSize: Long,
+        formatVersion: Byte,
     ): ChunkedMediaHeader {
         val temporary = temporaryFile(destination)
         try {
             val header = source.inputStream().use { input ->
                 temporary.outputStream().use { output ->
-                    encrypt(input, source.length(), output, masterKey, folderKey, chunkSize)
+                    encrypt(input, source.length(), output, masterKey, folderKey, chunkSize, formatVersion)
                         .also { output.flush(); output.fd.sync() }
                 }
             }
@@ -334,8 +506,15 @@ object ChunkedMediaEncryptor {
         masterKey: SecureBytes,
         folderKey: SecureBytes? = null,
         chunkSize: Long = ChunkedMediaHeader.DEFAULT_CHUNK_SIZE,
+    ): ChunkedMediaHeader =
+        encrypt(input, totalSize, output, masterKey, folderKey, chunkSize, ChunkedMediaHeader.CURRENT_VERSION)
+
+    /** [encrypt] in a chosen version: version 1 only for tests and fixtures. */
+    internal fun encrypt(
+        input: InputStream, totalSize: Long, output: OutputStream, masterKey: SecureBytes, folderKey: SecureBytes?,
+        chunkSize: Long, formatVersion: Byte,
     ): ChunkedMediaHeader {
-        val header = ChunkedMediaHeader.make(totalSize, chunkSize, hasFolderLayer = folderKey != null)
+        val header = ChunkedMediaHeader.make(totalSize, chunkSize, folderKey != null, formatVersion)
         output.write(header.serialized())
         val cipher = ChunkedMediaCipher(header, masterKey, folderKey)
         val buffer = ByteArray(Math.toIntExact(minOf(chunkSize, totalSize.coerceAtLeast(1))))
@@ -363,7 +542,7 @@ class ChunkedMediaReader(val file: File) {
      */
     init {
         RandomAccessFile(file, "r").use { handle ->
-            val head = ByteArray(ChunkedMediaHeader.SIZE)
+            val head = ByteArray(ChunkedMediaHeader.MAXIMUM_SIZE)
             val read = handle.readAtMost(head)
             header = ChunkedMediaHeader.parse(head.copyOf(read))
             val actual = handle.length()

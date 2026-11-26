@@ -14,8 +14,14 @@ object KeyDerivation {
     /** Rounds for vault passwords. The format refuses anything lower. */
     const val VAULT_ITERATIONS = 600_000
 
-    /** Rounds for folder passwords, which sit behind the vault password. */
-    const val FOLDER_ITERATIONS = 100_000
+    /**
+     * Rounds for folder passwords set from ObscuraCrypto 1.3.0 (Swift 1.2.0) on: the same as a vault's. Someone who has the vault open can
+     * copy a folder's lock and guess at it offline, and that is who a folder password is for.
+     */
+    const val FOLDER_ITERATIONS = 600_000
+
+    /** Rounds for folder passwords set before: still read, never written. */
+    const val LEGACY_FOLDER_ITERATIONS = 100_000
 
     const val KEY_LENGTH = 32
     const val SALT_LENGTH = 32
@@ -77,9 +83,10 @@ object KeyDerivation {
      * refused, so nothing can swap in a weaker derivation while vaults are open.
      *
      * The function is first checked against the library's own on two small
-     * inputs and refused if its answers differ, so a native library that is
-     * broken on some device fails at start-up instead of deriving keys that
-     * open nothing, or the same key for every password.
+     * inputs, and against a published answer at 65,537 rounds (past any
+     * 16-bit round counter), and refused if its answers differ, so a native
+     * library that is broken on some device fails at start-up instead of
+     * deriving keys that open nothing, or the same key for every password.
      */
     fun install(function: Pbkdf2Function) {
         synchronized(lock) {
@@ -101,7 +108,18 @@ object KeyDerivation {
             actual?.fill(0)
             check(agrees) { "The key derivation to install does not compute PBKDF2-HMAC-SHA256" }
         }
+        // Checked against a fixed answer rather than the library's own, which
+        // is slow on a phone at this count.
+        val password = "Obscura self-test".toByteArray(Charsets.UTF_8)
+        val actual = try { function.derive(password, ByteArray(SALT_LENGTH) { it.toByte() }, 65_537) } catch (e: Exception) { null }
+        val agrees = actual != null && constantTimeEquals(MANY_ROUNDS_ANSWER, actual)
+        actual?.fill(0)
+        check(agrees) { "The key derivation to install does not compute PBKDF2-HMAC-SHA256 at many rounds" }
     }
+
+    /** PBKDF2-HMAC-SHA256("Obscura self-test", bytes 0 to 31, 65,537 rounds), from Python's hashlib. */
+    private val MANY_ROUNDS_ANSWER = "b833a0be9869b8205617cdbbd831edb0ccb00e85577aafbcf90457270f87a5fc"
+        .chunked(2).map { it.toInt(16).toByte() }.toByteArray()
 
     private fun active(): Pbkdf2Function = synchronized(lock) {
         used = true
@@ -127,6 +145,22 @@ object KeyDerivation {
 
     /** A fresh random 32-byte salt. */
     fun makeSalt(): ByteArray = Random.bytes(SALT_LENGTH)
+
+    /**
+     * A 32-byte key for one job, derived from [key] and named by [info]: HKDF-SHA256 with a salt of 32 zero bytes.
+     *
+     * Version 2 exports and shared items files never use the key a password or a random draw gives them as it is. The key their
+     * records are sealed with and their key commitment are each derived from it this way, under different names, so no key is both an
+     * AES-GCM key and an HMAC key. The caller zeroes the result.
+     */
+    internal fun subkey(key: SecureBytes, info: ByteArray): ByteArray =
+        key.withBytes { ChunkedMediaCipher.hkdfSha256(it, ByteArray(SALT_LENGTH), info, KEY_LENGTH) }
+
+    /** [subkey] as an AES key for the JCA, which keeps its own copy. */
+    internal fun subkeySpec(key: SecureBytes, info: ByteArray): SecretKeySpec {
+        val bytes = subkey(key, info)
+        return try { SecretKeySpec(bytes, "AES") } finally { bytes.fill(0) }
+    }
 }
 
 /**
@@ -151,23 +185,29 @@ object AesGcm {
         return open(combined, key.secretKey())
     }
 
-    internal fun seal(plaintext: ByteArray, key: SecretKeySpec, nonce: ByteArray): ByteArray {
+    /**
+     * [associatedData] is covered by the tag but not carried in the message.
+     * `.obscurashared` files and version 2 exports use it.
+     */
+    internal fun seal(plaintext: ByteArray, key: SecretKeySpec, nonce: ByteArray, associatedData: ByteArray? = null): ByteArray {
         require(nonce.size == NONCE_SIZE)
         // A new Cipher every time: the JCA refuses to encrypt twice under one
         // key and nonce on the same instance, which is a safety, not a limit.
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.ENCRYPT_MODE, key, GCMParameterSpec(TAG_SIZE * 8, nonce))
+        if (associatedData != null) cipher.updateAAD(associatedData)
         val out = ByteArray(NONCE_SIZE + plaintext.size + TAG_SIZE)
         System.arraycopy(nonce, 0, out, 0, NONCE_SIZE)
         cipher.doFinal(plaintext, 0, plaintext.size, out, NONCE_SIZE)
         return out
     }
 
-    internal fun open(combined: ByteArray, key: SecretKeySpec): ByteArray {
+    internal fun open(combined: ByteArray, key: SecretKeySpec, associatedData: ByteArray? = null): ByteArray {
         if (combined.size < OVERHEAD) throw ObscuraCryptoException.AuthenticationFailed()
         return try {
             val cipher = Cipher.getInstance("AES/GCM/NoPadding")
             cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(TAG_SIZE * 8, combined, 0, NONCE_SIZE))
+            if (associatedData != null) cipher.updateAAD(associatedData)
             cipher.doFinal(combined, NONCE_SIZE, combined.size - NONCE_SIZE)
         } catch (e: AEADBadTagException) {
             throw ObscuraCryptoException.AuthenticationFailed()

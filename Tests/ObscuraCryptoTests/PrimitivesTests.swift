@@ -57,6 +57,43 @@ final class PrimitivesTests: XCTestCase {
         XCTAssertTrue(key.withUnsafeBytes { $0.allSatisfy { $0 == 0 } })
     }
 
+    /// Zeroed bytes are a working AES key, so a cleared key must refuse to
+    /// be used, or a seal after a lock would succeed under a key anyone can
+    /// guess.
+    func testAClearedKeyCannotSealOpenWrapOrBecomeWords() throws {
+        let key = try SecureBytes.random(count: 32)
+        let sealed = try AESGCM.seal(Data("photo".utf8), key: key)
+        let (header, _) = try VaultHeader.create(password: "correct horse")
+        key.clear()
+        XCTAssertTrue(key.isCleared)
+        func assertCleared(_ body: () throws -> Any, line: UInt = #line) {
+            XCTAssertThrowsError(try body(), line: line) {
+                XCTAssertEqual($0 as? ObscuraCryptoError, .keyCleared, line: line)
+            }
+        }
+        assertCleared { try AESGCM.seal(Data("photo".utf8), key: key) }
+        assertCleared { try AESGCM.open(sealed, key: key) }
+        assertCleared { try SingleShotMedia.encrypt(Data("photo".utf8), masterKey: key) }
+        assertCleared { try ChunkedMediaCipher(header: try ChunkedMediaHeader.make(totalPlaintextSize: 10), masterKey: key) }
+        assertCleared { try VaultHeader.encryptDatabaseSize(10, masterKey: key) }
+        assertCleared { try header.settingPassword("new password", masterKey: key) }
+        assertCleared { try RecoveryPhrase.words(for: key) }
+        assertCleared { try key.withKeyBytes { Data($0) } }
+        XCTAssertFalse(header.opens(masterKey: key))
+        // Its zeros are no key: not shown as one, and equal to nothing.
+        XCTAssertEqual(key.fingerprint, "cleared")
+        let other = try SecureBytes.random(count: 32)
+        other.clear()
+        XCTAssertNotEqual(key, other)
+        XCTAssertNotEqual(key, key)
+    }
+
+    func testAKeyThatWasNeverClearedStillWorks() throws {
+        let key = try SecureBytes.random(count: 32)
+        XCTAssertFalse(key.isCleared)
+        XCTAssertEqual(try AESGCM.open(try AESGCM.seal(Data("photo".utf8), key: key), key: key), Data("photo".utf8))
+    }
+
     func testKeysCompareByContent() throws {
         let key = try SecureBytes.random(count: 32)
         let copy = key.withUnsafeBytes { SecureBytes(copying: Data($0)) }

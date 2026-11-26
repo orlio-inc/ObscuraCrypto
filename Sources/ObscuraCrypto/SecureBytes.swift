@@ -3,6 +3,7 @@
 
 import CryptoKit
 import Foundation
+import os
 
 /// Key material that is zeroed when it is released.
 ///
@@ -14,12 +15,21 @@ import Foundation
 ///
 /// Keys are handed to CryptoKit as a `SymmetricKey`, which keeps and clears
 /// its own copy.
+///
+/// A cleared key refuses to be used: every seal, open, wrap or derivation in
+/// this package throws `keyCleared` for it. Zeroed bytes are a perfectly good
+/// AES key, so without that refusal a seal made after the key was cleared
+/// would succeed, under a key anyone can guess.
 public final class SecureBytes: @unchecked Sendable {
     // Safe to share across threads: the buffer is only written during init
     // and by `clear()`, which callers use when they are done with the key.
     private let buffer: UnsafeMutableRawBufferPointer
+    private let cleared = OSAllocatedUnfairLock(initialState: false)
 
     public var count: Int { buffer.count }
+
+    /// Whether `clear()` has run. A cleared key cannot be used again.
+    public var isCleared: Bool { cleared.withLock { $0 } }
 
     /// Zero-filled bytes of the given length.
     public init(count: Int) {
@@ -46,8 +56,23 @@ public final class SecureBytes: @unchecked Sendable {
         return bytes
     }
 
+    /// The bytes as they are, zeros once `clear()` has run. For using them as
+    /// a key (sealing, wrapping, deriving another key), use `withKeyBytes`,
+    /// which refuses a cleared key.
     public func withUnsafeBytes<Result>(_ body: (UnsafeRawBufferPointer) throws -> Result) rethrows -> Result {
         try body(UnsafeRawBufferPointer(buffer))
+    }
+
+    /// The bytes, for use as a key: throws `keyCleared` once `clear()` has run.
+    /// Everything in this package that encrypts, decrypts, wraps or derives
+    /// with a key reads it through here, and so should any caller that does.
+    public func withKeyBytes<Result>(_ body: (UnsafeRawBufferPointer) throws -> Result) throws -> Result {
+        try checkNotCleared()
+        return try body(UnsafeRawBufferPointer(buffer))
+    }
+
+    func checkNotCleared() throws {
+        if isCleared { throw ObscuraCryptoError.keyCleared }
     }
 
     /// Writes into the buffer in place. Internal: keys are built here only
@@ -56,8 +81,10 @@ public final class SecureBytes: @unchecked Sendable {
         try body(buffer)
     }
 
-    /// Overwrites the bytes with zeros. Also done automatically on release.
+    /// Overwrites the bytes with zeros, and refuses any later use as a key.
+    /// Also done automatically on release.
     public func clear() {
+        cleared.withLock { $0 = true }
         guard let base = buffer.baseAddress, buffer.count > 0 else { return }
         _ = memset_s(base, buffer.count, 0, buffer.count)
     }
@@ -65,14 +92,17 @@ public final class SecureBytes: @unchecked Sendable {
     /// The first 8 bytes of SHA-256 over the key, in hex.
     ///
     /// Safe to show: a truncated one-way hash says nothing useful about the
-    /// key, but it lets two tools confirm they unwrapped the same one.
+    /// key, but it lets two tools confirm they unwrapped the same one. A
+    /// cleared key shows "cleared", never the fingerprint of its zeros.
     public var fingerprint: String {
+        guard !isCleared else { return "cleared" }
         let digest = withUnsafeBytes { SHA256.hash(data: $0) }
         return digest.prefix(8).map { String(format: "%02x", $0) }.joined()
     }
 
+    /// The key for CryptoKit: throws `keyCleared` once `clear()` has run.
     var symmetricKey: SymmetricKey {
-        withUnsafeBytes { SymmetricKey(data: $0) }
+        get throws { try withKeyBytes { SymmetricKey(data: $0) } }
     }
 
     deinit {
@@ -83,9 +113,11 @@ public final class SecureBytes: @unchecked Sendable {
 
 extension SecureBytes: Equatable {
     /// Constant-time comparison, so equality checks on keys do not leak where
-    /// two keys first differ.
+    /// two keys first differ. A cleared key equals no key, not even another
+    /// cleared one: their zeros are not keys.
     public static func == (lhs: SecureBytes, rhs: SecureBytes) -> Bool {
-        lhs.withUnsafeBytes { a in
+        guard !lhs.isCleared, !rhs.isCleared else { return false }
+        return lhs.withUnsafeBytes { a in
             rhs.withUnsafeBytes { b in
                 constantTimeEquals(a, b)
             }

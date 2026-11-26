@@ -84,6 +84,8 @@ class HardeningTest : CryptoTestCase() {
         assertFailsWith<IllegalStateException> { KeyDerivation.install { _, _, _ -> ByteArray(32) } }
         assertFailsWith<IllegalStateException> { KeyDerivation.install { _, _, _ -> error("native library missing") } }
         assertFailsWith<IllegalStateException> { KeyDerivation.install { p, s, r -> Pbkdf2.derive(p, s, r + 1) } }
+        // Right at every small count, wrong once the rounds pass 16 bits: a counter overflow no small check would see.
+        assertFailsWith<IllegalStateException> { KeyDerivation.install { p, s, r -> Pbkdf2.derive(p, s, r and 0xFFFF) } }
         // Refused functions leave nothing installed.
         KeyDerivation.install { p, s, r -> Pbkdf2.derive(p, s, r) }
     }
@@ -98,18 +100,30 @@ class HardeningTest : CryptoTestCase() {
             "mediaFiles":[$media]$extra}""".toByteArray()
     }
 
-    private fun export(manifest: ByteArray): ByteArray {
+    /** The manifest alone, in each version, written without the writer's own check of it, as a hostile file would be. */
+    private fun exports(manifest: ByteArray): List<ByteArray> {
+        val version1 = ByteArrayOutputStream().also { ExportWriterVersion1.begin(it, "pw").writeManifest(manifest) }.toByteArray()
+        val salt = KeyDerivation.makeSalt()
+        val prefix = Random.bytes(4)
+        val exportKey = KeyDerivation.pbkdf2SHA256("pw", salt, KeyDerivation.VAULT_ITERATIONS)
+        val header = ExportHeader.version2(salt, KeyDerivation.VAULT_ITERATIONS.toLong(), prefix, 4_096, ExportHeader.keyCommitment(exportKey))
         val out = ByteArrayOutputStream()
-        ExportWriter.begin(out, "pw").writeManifest(manifest)
-        return out.toByteArray()
+        out.write(header.serialized())
+        val records = (SharedItemsFile.padme(4L + manifest.size) + 4_095) / 4_096
+        RecordSealer(out, ExportHeader.recordKey(exportKey), prefix, header.serialized(), 4_096, records).run {
+            append(bigEndianBytes(manifest.size.toLong(), 4))
+            append(manifest)
+            finish(0)
+        }
+        return listOf(version1, out.toByteArray())
     }
 
     @Test
     fun aDeeplyNestedManifestIsRefusedNotAStackOverflow() {
         for (depth in listOf(40, 100_000)) {
             val nested = ",\"x\":" + "[".repeat(depth) + "]".repeat(depth)
-            assertRefused<ObscuraCryptoException.InvalidExport> {
-                ExportArchive.open(ByteArrayInputStream(export(manifest(nested))), "pw").close()
+            for (export in exports(manifest(nested))) {
+                assertRefused<ObscuraCryptoException.InvalidExport> { ExportArchive.open(ByteArrayInputStream(export), "pw").close() }
             }
         }
     }
@@ -117,13 +131,100 @@ class HardeningTest : CryptoTestCase() {
     @Test
     fun bracketsInsideStringsDoNotCountAsNesting() {
         val text = ",\"note\":\"" + "[".repeat(500) + "\\\"" + "{".repeat(500) + "\""
-        ExportArchive.open(ByteArrayInputStream(export(manifest(text))), "pw").close()
+        for (export in exports(manifest(text))) ExportArchive.open(ByteArrayInputStream(export), "pw").close()
+    }
+
+    /** What the app writes, a date as seconds with a fraction, reads; what no JSON writer would, two of one key or base64 a lenient decoder would take, does not. */
+    @Test
+    fun aManifestIsReadOneWayOnly() {
+        for (export in exports(manifest(",\"exportDate\":785000000.123456,\"scale\":1e-3"))) {
+            ExportArchive.open(ByteArrayInputStream(export), "pw").close()
+        }
+        val created = VaultHeader.create("pw")
+        val salt = Base64.getEncoder().encodeToString(created.header.salt)
+        val wrapped = Base64.getEncoder().encodeToString(created.header.wrappedMasterKey)
+        val hostile = listOf(
+            // Two of one key: a reader taking the first and another the last would split the stream differently.
+            """{"exportVersion":1,"vaultSalt":"$salt","encryptedMEK":"$wrapped","databaseSize":0,"databaseSize":5,"mediaFiles":[]}""",
+            // A size as a string, and a whole number written as a decimal.
+            """{"exportVersion":1,"vaultSalt":"$salt","encryptedMEK":"$wrapped","databaseSize":"0","mediaFiles":[]}""",
+            """{"exportVersion":1,"vaultSalt":"$salt","encryptedMEK":"$wrapped","databaseSize":0.0,"mediaFiles":[]}""",
+            """{"exportVersion":1.0,"vaultSalt":"$salt","encryptedMEK":"$wrapped","databaseSize":0,"mediaFiles":[]}""",
+            // Base64 without its padding, and with a line break.
+            """{"exportVersion":1,"vaultSalt":"${salt.trimEnd('=')}","encryptedMEK":"$wrapped","databaseSize":0,"mediaFiles":[]}""",
+            """{"exportVersion":1,"vaultSalt":"${salt.substring(0, 8)}\n${salt.substring(8)}","encryptedMEK":"$wrapped","databaseSize":0,"mediaFiles":[]}""",
+        )
+        for (json in hostile) {
+            for (export in exports(json.toByteArray())) {
+                assertRefused<ObscuraCryptoException.InvalidExport> { ExportArchive.open(ByteArrayInputStream(export), "pw").close() }
+            }
+        }
+    }
+
+    /** Sizes that add up past the largest number are refused, not wrapped round to a small total. */
+    @Test
+    fun sizesThatOverflowAreRefused() {
+        val max = Long.MAX_VALUE
+        val id = "A3E42A38-8C9A-483D-BAE4-1AEE61FF133A"
+        val hostile = listOf(
+            manifest(media = """{"mediaId":"$id","dataSize":$max,"thumbSize":1}"""),
+            // Wraps to exactly 0 with plain addition.
+            manifest(media = """{"mediaId":"$id","dataSize":$max,"thumbSize":$max},""" +
+                """{"mediaId":"B3E42A38-8C9A-483D-BAE4-1AEE61FF133A","dataSize":2,"thumbSize":0}"""),
+        )
+        for (json in hostile) {
+            for (export in exports(json)) {
+                assertRefused<ObscuraCryptoException.InvalidExport> { ExportArchive.open(ByteArrayInputStream(export), "pw").close() }
+            }
+        }
+    }
+
+    // MARK: Key block
+
+    private fun exportWithKeyBlock(keyBlock: ByteArray, databaseBytes: ByteArray = ByteArray(0)): ByteArray {
+        val created = VaultHeader.create("pw")
+        val b64 = Base64.getEncoder()
+        val manifest = """{"exportVersion":1,"vaultSalt":"${b64.encodeToString(created.header.salt)}",
+            "encryptedMEK":"${b64.encodeToString(created.header.wrappedMasterKey)}","databaseSize":${databaseBytes.size},
+            "mediaFiles":[]}""".toByteArray()
+        val out = ByteArrayOutputStream()
+        ExportWriter.begin(out, "pw", KeyDerivation.VAULT_ITERATIONS, 4_096, keyBlock).run {
+            writeManifest(manifest)
+            writeFile(ByteArrayInputStream(databaseBytes), databaseBytes.size.toLong())
+            finish()
+        }
+        return out.toByteArray()
+    }
+
+    /** A lock of a type no reader knows yet, such as a recovery key added later, is passed over: the file opens with its password. */
+    @Test
+    fun aLockOfAnUnknownTypeIsPassedOver() {
+        val lock = byteArrayOf(0x09, 0x00, 0x05) + "later".toByteArray()
+        val export = exportWithKeyBlock(byteArrayOf(1) + lock, byteArrayOf(1, 2, 3))
+        ExportArchive.open(ByteArrayInputStream(export), "pw").use { archive ->
+            assertEquals(listOf(9), archive.header.lockTypes)
+            assertTrue(archive.read(3).contentEquals(byteArrayOf(1, 2, 3)))
+            assertTrue(archive.isAtEnd())
+        }
+    }
+
+    /** The key block is authenticated with the header: a lock changed, taken out or cut short is refused, never read past. */
+    @Test
+    fun aKeyBlockChangedOrCutShortIsRefused() {
+        val lock = byteArrayOf(0x09, 0x00, 0x05) + "later".toByteArray()
+        val original = exportWithKeyBlock(byteArrayOf(1) + lock)
+        val changed = original.copyOf().also { it[96 + 1 + 3] = (it[96 + 1 + 3].toInt() xor 1).toByte() }
+        val removed = original.copyOf().also { it[96] = 0 }
+        val cut = original.copyOf(96 + 4).also { it[10] = 0x10 }
+        for (bytes in listOf(changed, removed, cut)) {
+            assertRefused<ObscuraCryptoException.InvalidExport> { ExportArchive.verify(ByteArrayInputStream(bytes), "pw") }
+        }
     }
 
     @Test
     fun aRecordLengthIsNotAllocatedBeforeTheBytesArrive() {
         val out = ByteArrayOutputStream()
-        ExportWriter.begin(out, "pw")
+        ExportWriterVersion1.begin(out, "pw")
         out.write(byteArrayOf(0x0F, 0xFF.toByte(), 0xFF.toByte(), 0xFF.toByte())) // claims 256 MiB
         out.write(ByteArray(8))
         val bean = ManagementFactory.getThreadMXBean() as com.sun.management.ThreadMXBean
@@ -146,8 +247,8 @@ class HardeningTest : CryptoTestCase() {
         val upper = "A3E42A38-8C9A-483D-BAE4-1AEE61FF133A"
         val entries = """{"mediaId":"$upper","dataSize":0,"thumbSize":0},
             {"mediaId":"${upper.lowercase()}","dataSize":0,"thumbSize":0}"""
-        assertRefused<ObscuraCryptoException.InvalidExport> {
-            ExportArchive.open(ByteArrayInputStream(export(manifest(media = entries))), "pw").close()
+        for (export in exports(manifest(media = entries))) {
+            assertRefused<ObscuraCryptoException.InvalidExport> { ExportArchive.open(ByteArrayInputStream(export), "pw").close() }
         }
     }
 }

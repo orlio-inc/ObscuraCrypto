@@ -97,6 +97,8 @@ for f in data/*.db.enc; do echo "== $f"; obscura vault inspect "$f"; done
 
 Each one should report version 3, cipher suite `0x01` (PBKDF2-HMAC-SHA256 + AES-256-GCM), 600000 KDF rounds, a valid checksum, and a different salt. Nothing in the output distinguishes the vault you use from the others.
 
+That holds for one copy of the folder. Two copies from different times are another matter: a vault you use is written again each time it is saved, while an unused one never changes, so comparing the two copies shows which files changed. The `snapshots` folder holds several dated copies, so a single phone backup that includes it is enough for that comparison. It shows which files are vaults in use, never what is inside them.
+
 The files are also padded to random sizes between 2 and 15 MB, so an empty vault and a full one are not told apart by size:
 
 ```sh
@@ -147,7 +149,7 @@ open ~/Desktop/check
 
 `file` should report a JPEG, HEIC, PNG or QuickTime movie, and it opens as one of your photos or videos. Thumbnails decrypt the same way. A single-shot file decrypts to exactly 28 bytes fewer than its encrypted size: a 12-byte nonce and a 16-byte tag.
 
-A file in a password-protected folder will not decrypt with the vault password alone. That failure is what the second layer looks like from outside: it is sealed again with the folder's own key, which lives in the vault's encrypted database.
+A file in a password-protected folder will not decrypt with the vault password alone. That failure is what the second layer looks like from outside: it is sealed again with the folder's own key, which lives in the vault's encrypted database, locked with the folder password. (A file the app was part way through protecting when it was stopped is the exception until the folder is next opened: it is still sealed once, and decrypts like any other.)
 
 **Get everything out as ordinary files.**
 
@@ -184,6 +186,8 @@ This is the key hierarchy's central claim: your password protects a random maste
 
 Every media file is byte-for-byte identical. The new password unlocks the same master key fingerprint as before, and `inspect` shows a new salt. The old password now answers `Wrong password`.
 
+Copies made before the change are not touched by it: the same vault file in a phone backup, or in an exported backup file, made before you changed the password still opens with the old one, and gives the same master key.
+
 ## 6. Check that tampering is detected
 
 Every file is authenticated, so a single changed byte stops it decrypting rather than producing altered output:
@@ -196,13 +200,29 @@ obscura media decrypt /tmp/tampered /tmp/out --vault data/YOUR.db.enc
 
 This fails with an authentication error and writes no output. For a chunked video, moving a chunk to a different position is caught as well, because each chunk must carry the nonce its position requires; `MediaTests.testSwappedChunksAreRejected` shows how to construct that case.
 
+## 7. Check a file sent with Send Encrypted
+
+A `.obscurashared` file someone sent you, or one you made in the app, can be checked without adding it to a vault:
+
+```sh
+obscura shared verify ~/Downloads/<name>.obscurashared
+```
+
+It asks for the password only if the file has one, decrypts every item in memory and checks it against its fingerprint, and writes nothing. The `Lock` line says what protects the file: a password with its key derivation rounds, or `open`, meaning the key is stored in the file and anyone who has it can open it. To get the items out as ordinary files:
+
+```sh
+obscura shared decrypt ~/Downloads/<name>.obscurashared ~/Desktop/received
+```
+
+They are named by number and kind (`1-photo.jpg`, `2-live-photo.heic` with `2-live-photo.mov`, `3-document.pdf`), readable by you only, and appear only once the whole file has checked.
+
 ## When you are done
 
 The steps above leave copies behind. Delete them:
 
 ```sh
 rm -rf ~/obscura-verify                                  # the vault files copied from the backup
-rm -rf ~/Desktop/check ~/Desktop/my-photos ~/Desktop/from-export   # your decrypted photos
+rm -rf ~/Desktop/check ~/Desktop/my-photos ~/Desktop/from-export ~/Desktop/received   # your decrypted photos
 ```
 
 Then delete the phone backup in Finder (**Manage Backups**), since it holds everything else on the phone unencrypted.
@@ -210,7 +230,7 @@ Then delete the phone backup in Finder (**Manage Backups**), since it holds ever
 ## What this does not show
 
 - **That the app on your phone was built from this code.** iOS has no reproducible builds, and the App Store re-signs and encrypts every app, so nobody outside Apple can prove which source a given binary came from. What the steps above do show is that the app's files match this code's formats exactly, which they could not do by accident.
-- **What the app does while it runs.** That it clears keys from memory when it locks, keeps decrypted media out of temporary files, and never sends your photos or data anywhere. You can check the last of these yourself with a network monitor: the only traffic you should see is Apple's own, such as App Store purchase checks. The others are described in the [security paper](https://obscura-vault.com/security).
+- **What the app does while it runs.** That it clears keys from memory when it locks, keeps decrypted media out of temporary files, and never sends your photos or data anywhere. You can check the last of these yourself with a network monitor: the only traffic you should see is Apple's own (Google Play's on Android), such as purchase checks, with one exception: when you share a link to an image from another app (Safari, for one) and agree to download it, the iPhone app fetches that image from its site. The others are described in the [security paper](https://obscura-vault.com/security).
 - **The vault database.** Folder and photo records live in a SQLCipher database inside each vault file, encrypted with the master key. This package reads the header in front of it and not the database itself.
 - **How the 10 vault slots are managed.** How unused slots get their keys, and how the app checks your password against every slot in the same time. The steps above show the result, files that cannot be told apart, but not that code.
 

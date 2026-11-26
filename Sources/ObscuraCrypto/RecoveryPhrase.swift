@@ -19,8 +19,8 @@ import Foundation
 /// cannot be revoked short of re-encrypting the vault under a new key.
 ///
 /// The checksum byte catches a mistyped phrase before any vault is tried. It
-/// is public arithmetic on the key, so it costs an attacker nothing to
-/// compute; 248 bits remain to be guessed.
+/// is computed from the key, so it adds nothing to guess and takes nothing
+/// away: the key's 256 bits remain to be guessed.
 public enum RecoveryPhrase {
     public static let wordCount = 24
     static let keySize = 32
@@ -33,8 +33,8 @@ public enum RecoveryPhrase {
         }
         // Key and checksum together, 33 bytes = 264 bits = 24 words.
         let bits = SecureBytes(count: keySize + 1)
-        bits.withUnsafeMutableBytes { buffer in
-            masterKey.withUnsafeBytes { key in
+        try bits.withUnsafeMutableBytes { buffer in
+            try masterKey.withKeyBytes { key in
                 buffer.baseAddress!.copyMemory(from: key.baseAddress!, byteCount: keySize)
                 buffer[keySize] = checksum(of: key)
             }

@@ -56,7 +56,8 @@
       "file" : "video.data.enc",
       "folder" : false,
       "kind" : "chunked",
-      "seed" : 2
+      "seed" : 2,
+      "version" : 2
     },
     {
       "chunkSize" : 65536,
@@ -65,7 +66,8 @@
       "file" : "video-folder.data.enc",
       "folder" : true,
       "kind" : "chunked",
-      "seed" : 2
+      "seed" : 2,
+      "version" : 2
     },
     {
       "chunkSize" : 65536,
@@ -74,7 +76,8 @@
       "file" : "video-boundary.data.enc",
       "folder" : false,
       "kind" : "chunked",
-      "seed" : 3
+      "seed" : 3,
+      "version" : 2
     },
     {
       "chunkSize" : 65536,
@@ -83,7 +86,8 @@
       "file" : "video-empty.data.enc",
       "folder" : false,
       "kind" : "chunked",
-      "seed" : 4
+      "seed" : 4,
+      "version" : 2
     },
     {
       "chunkSize" : 4096,
@@ -92,7 +96,38 @@
       "file" : "video-small-chunks.data.enc",
       "folder" : true,
       "kind" : "chunked",
-      "seed" : 5
+      "seed" : 5,
+      "version" : 2
+    },
+    {
+      "chunkSize" : 65536,
+      "count" : 200000,
+      "expect" : "opens",
+      "file" : "video-v1.data.enc",
+      "folder" : false,
+      "kind" : "chunked",
+      "seed" : 2,
+      "version" : 1
+    },
+    {
+      "chunkSize" : 65536,
+      "count" : 200000,
+      "expect" : "opens",
+      "file" : "video-folder-v1.data.enc",
+      "folder" : true,
+      "kind" : "chunked",
+      "seed" : 2,
+      "version" : 1
+    },
+    {
+      "chunkSize" : 65536,
+      "count" : 0,
+      "expect" : "opens",
+      "file" : "video-empty-v1.data.enc",
+      "folder" : false,
+      "kind" : "chunked",
+      "seed" : 4,
+      "version" : 1
     },
     {
       "chunkSize" : 65536,
@@ -124,6 +159,33 @@
     {
       "chunkSize" : 65536,
       "count" : 200000,
+      "expect" : "authenticationFailed",
+      "file" : "tampered/video-salt.data.enc",
+      "folder" : false,
+      "kind" : "chunked",
+      "seed" : 2
+    },
+    {
+      "chunkSize" : 65536,
+      "count" : 200000,
+      "expect" : "chunkNonceMismatch",
+      "file" : "tampered/video-cut.data.enc",
+      "folder" : false,
+      "kind" : "chunked",
+      "seed" : 2
+    },
+    {
+      "chunkSize" : 65536,
+      "count" : 200000,
+      "expect" : "chunkedFileSizeMismatch",
+      "file" : "tampered/video-emptied.data.enc",
+      "folder" : false,
+      "kind" : "chunked",
+      "seed" : 2
+    },
+    {
+      "chunkSize" : 65536,
+      "count" : 200000,
       "expect" : "invalidChunkedHeader",
       "file" : "tampered/video-hostile-length.data.enc",
       "folder" : false,
@@ -131,46 +193,55 @@
       "seed" : 2
     },
     {
-      "databaseSha256" : "79be5eb3e14c2bb434f859f442dfb112987824a0d878253c33e44453f3c28cbc",
+      "chunkSize" : 65536,
+      "count" : 200000,
+      "expect" : "invalidChunkedHeader",
+      "file" : "tampered/video-version.data.enc",
+      "folder" : false,
+      "kind" : "chunked",
+      "seed" : 2
+    },
+    {
+      "databaseSha256" : "4df4d0a6b84773867180538e9d1f3c56c7caea2d7db9bb3e7911f8341cb733fd",
       "expect" : "opens",
       "file" : "export.obscura",
       "kind" : "export",
       "media" : [
         {
-          "dataSha256" : "7c7e583c13465f6b494d07baf9892786d1bf307e32cd7a851e9b265a3df6516a",
+          "dataSha256" : "23a67012f8c94a97e2cb461a789ed26d290d6a78a61873a5a4f60ad5f13bb19d",
           "id" : "A3E42A38-8C9A-483D-BAE4-1AEE61FF133A",
-          "thumbSha256" : "ca22e9c5fd1fcd1ae3d7bc3ff7e753560d6be271674db9bcfd172d72fbdc2aac"
+          "thumbSha256" : "9e4c5f1eaf56487c89aa831a72201df443f56cbcb9e4501d995426fdf5b2d15a"
         },
         {
-          "dataSha256" : "bbefa1ba824ce4ffec543cdb9a7fe3aae0e25442fd193ce0eb1723b8255d2e1a",
+          "dataSha256" : "7d6eed88f22ae9d3378398f3c0dbb02aba4c982bba2255799c09b5b003cdfa9f",
           "id" : "B73D3715-51FA-4CFD-81F8-863C3D37D73F",
-          "thumbSha256" : "eeb215217f97748b0f7ad35f35bd4ecafb2434183ecda04d36df9f39a03eabd3"
+          "thumbSha256" : "ccbca858380c26cbb2c6cb7afaa804fe2757d92a840083c46690b37a9ad5dbf2"
         },
         {
-          "dataSha256" : "503c73f1e6d460f9f1b39069d83d7520c49bfc55b7397737b4a0197a16d85abd",
+          "dataSha256" : "8e060697fc7ec400021557d05ce5f65b2fd22e3e8937ed5ce2ef411e8c261966",
           "id" : "919120EA-50E6-417C-8F1A-714F5A286E56",
           "thumbSha256" : "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
         }
       ]
     },
     {
-      "databaseSha256" : "79be5eb3e14c2bb434f859f442dfb112987824a0d878253c33e44453f3c28cbc",
+      "databaseSha256" : "4df4d0a6b84773867180538e9d1f3c56c7caea2d7db9bb3e7911f8341cb733fd",
       "expect" : "wrongPassword",
       "file" : "export.obscura",
       "kind" : "export",
       "media" : [
         {
-          "dataSha256" : "7c7e583c13465f6b494d07baf9892786d1bf307e32cd7a851e9b265a3df6516a",
+          "dataSha256" : "23a67012f8c94a97e2cb461a789ed26d290d6a78a61873a5a4f60ad5f13bb19d",
           "id" : "A3E42A38-8C9A-483D-BAE4-1AEE61FF133A",
-          "thumbSha256" : "ca22e9c5fd1fcd1ae3d7bc3ff7e753560d6be271674db9bcfd172d72fbdc2aac"
+          "thumbSha256" : "9e4c5f1eaf56487c89aa831a72201df443f56cbcb9e4501d995426fdf5b2d15a"
         },
         {
-          "dataSha256" : "bbefa1ba824ce4ffec543cdb9a7fe3aae0e25442fd193ce0eb1723b8255d2e1a",
+          "dataSha256" : "7d6eed88f22ae9d3378398f3c0dbb02aba4c982bba2255799c09b5b003cdfa9f",
           "id" : "B73D3715-51FA-4CFD-81F8-863C3D37D73F",
-          "thumbSha256" : "eeb215217f97748b0f7ad35f35bd4ecafb2434183ecda04d36df9f39a03eabd3"
+          "thumbSha256" : "ccbca858380c26cbb2c6cb7afaa804fe2757d92a840083c46690b37a9ad5dbf2"
         },
         {
-          "dataSha256" : "503c73f1e6d460f9f1b39069d83d7520c49bfc55b7397737b4a0197a16d85abd",
+          "dataSha256" : "8e060697fc7ec400021557d05ce5f65b2fd22e3e8937ed5ce2ef411e8c261966",
           "id" : "919120EA-50E6-417C-8F1A-714F5A286E56",
           "thumbSha256" : "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
         }
@@ -178,62 +249,1773 @@
       "password" : "not the password"
     },
     {
-      "databaseSha256" : "79be5eb3e14c2bb434f859f442dfb112987824a0d878253c33e44453f3c28cbc",
+      "databaseSha256" : "4df4d0a6b84773867180538e9d1f3c56c7caea2d7db9bb3e7911f8341cb733fd",
       "expect" : "authenticationFailed",
       "file" : "tampered/export-flipped.obscura",
       "kind" : "export",
       "media" : [
         {
-          "dataSha256" : "7c7e583c13465f6b494d07baf9892786d1bf307e32cd7a851e9b265a3df6516a",
+          "dataSha256" : "23a67012f8c94a97e2cb461a789ed26d290d6a78a61873a5a4f60ad5f13bb19d",
           "id" : "A3E42A38-8C9A-483D-BAE4-1AEE61FF133A",
-          "thumbSha256" : "ca22e9c5fd1fcd1ae3d7bc3ff7e753560d6be271674db9bcfd172d72fbdc2aac"
+          "thumbSha256" : "9e4c5f1eaf56487c89aa831a72201df443f56cbcb9e4501d995426fdf5b2d15a"
         },
         {
-          "dataSha256" : "bbefa1ba824ce4ffec543cdb9a7fe3aae0e25442fd193ce0eb1723b8255d2e1a",
+          "dataSha256" : "7d6eed88f22ae9d3378398f3c0dbb02aba4c982bba2255799c09b5b003cdfa9f",
           "id" : "B73D3715-51FA-4CFD-81F8-863C3D37D73F",
-          "thumbSha256" : "eeb215217f97748b0f7ad35f35bd4ecafb2434183ecda04d36df9f39a03eabd3"
+          "thumbSha256" : "ccbca858380c26cbb2c6cb7afaa804fe2757d92a840083c46690b37a9ad5dbf2"
         },
         {
-          "dataSha256" : "503c73f1e6d460f9f1b39069d83d7520c49bfc55b7397737b4a0197a16d85abd",
+          "dataSha256" : "8e060697fc7ec400021557d05ce5f65b2fd22e3e8937ed5ce2ef411e8c261966",
           "id" : "919120EA-50E6-417C-8F1A-714F5A286E56",
           "thumbSha256" : "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
         }
       ]
     },
     {
-      "databaseSha256" : "79be5eb3e14c2bb434f859f442dfb112987824a0d878253c33e44453f3c28cbc",
+      "databaseSha256" : "4df4d0a6b84773867180538e9d1f3c56c7caea2d7db9bb3e7911f8341cb733fd",
       "expect" : "invalidExport",
       "file" : "tampered/export-truncated.obscura",
       "kind" : "export",
       "media" : [
         {
-          "dataSha256" : "7c7e583c13465f6b494d07baf9892786d1bf307e32cd7a851e9b265a3df6516a",
+          "dataSha256" : "23a67012f8c94a97e2cb461a789ed26d290d6a78a61873a5a4f60ad5f13bb19d",
           "id" : "A3E42A38-8C9A-483D-BAE4-1AEE61FF133A",
-          "thumbSha256" : "ca22e9c5fd1fcd1ae3d7bc3ff7e753560d6be271674db9bcfd172d72fbdc2aac"
+          "thumbSha256" : "9e4c5f1eaf56487c89aa831a72201df443f56cbcb9e4501d995426fdf5b2d15a"
         },
         {
-          "dataSha256" : "bbefa1ba824ce4ffec543cdb9a7fe3aae0e25442fd193ce0eb1723b8255d2e1a",
+          "dataSha256" : "7d6eed88f22ae9d3378398f3c0dbb02aba4c982bba2255799c09b5b003cdfa9f",
           "id" : "B73D3715-51FA-4CFD-81F8-863C3D37D73F",
-          "thumbSha256" : "eeb215217f97748b0f7ad35f35bd4ecafb2434183ecda04d36df9f39a03eabd3"
+          "thumbSha256" : "ccbca858380c26cbb2c6cb7afaa804fe2757d92a840083c46690b37a9ad5dbf2"
         },
         {
-          "dataSha256" : "503c73f1e6d460f9f1b39069d83d7520c49bfc55b7397737b4a0197a16d85abd",
+          "dataSha256" : "8e060697fc7ec400021557d05ce5f65b2fd22e3e8937ed5ce2ef411e8c261966",
           "id" : "919120EA-50E6-417C-8F1A-714F5A286E56",
           "thumbSha256" : "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
         }
       ]
+    },
+    {
+      "databaseSha256" : "4df4d0a6b84773867180538e9d1f3c56c7caea2d7db9bb3e7911f8341cb733fd",
+      "expect" : "opens",
+      "file" : "export2.obscura",
+      "kind" : "export",
+      "media" : [
+        {
+          "dataSha256" : "23a67012f8c94a97e2cb461a789ed26d290d6a78a61873a5a4f60ad5f13bb19d",
+          "id" : "A3E42A38-8C9A-483D-BAE4-1AEE61FF133A",
+          "thumbSha256" : "9e4c5f1eaf56487c89aa831a72201df443f56cbcb9e4501d995426fdf5b2d15a"
+        },
+        {
+          "dataSha256" : "7d6eed88f22ae9d3378398f3c0dbb02aba4c982bba2255799c09b5b003cdfa9f",
+          "id" : "B73D3715-51FA-4CFD-81F8-863C3D37D73F",
+          "thumbSha256" : "ccbca858380c26cbb2c6cb7afaa804fe2757d92a840083c46690b37a9ad5dbf2"
+        },
+        {
+          "dataSha256" : "8e060697fc7ec400021557d05ce5f65b2fd22e3e8937ed5ce2ef411e8c261966",
+          "id" : "919120EA-50E6-417C-8F1A-714F5A286E56",
+          "thumbSha256" : "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "databaseSha256" : "4df4d0a6b84773867180538e9d1f3c56c7caea2d7db9bb3e7911f8341cb733fd",
+      "expect" : "opens",
+      "file" : "export2-spec.obscura",
+      "kind" : "export",
+      "media" : [
+        {
+          "dataSha256" : "23a67012f8c94a97e2cb461a789ed26d290d6a78a61873a5a4f60ad5f13bb19d",
+          "id" : "A3E42A38-8C9A-483D-BAE4-1AEE61FF133A",
+          "thumbSha256" : "9e4c5f1eaf56487c89aa831a72201df443f56cbcb9e4501d995426fdf5b2d15a"
+        },
+        {
+          "dataSha256" : "7d6eed88f22ae9d3378398f3c0dbb02aba4c982bba2255799c09b5b003cdfa9f",
+          "id" : "B73D3715-51FA-4CFD-81F8-863C3D37D73F",
+          "thumbSha256" : "ccbca858380c26cbb2c6cb7afaa804fe2757d92a840083c46690b37a9ad5dbf2"
+        },
+        {
+          "dataSha256" : "8e060697fc7ec400021557d05ce5f65b2fd22e3e8937ed5ce2ef411e8c261966",
+          "id" : "919120EA-50E6-417C-8F1A-714F5A286E56",
+          "thumbSha256" : "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "databaseSha256" : "4df4d0a6b84773867180538e9d1f3c56c7caea2d7db9bb3e7911f8341cb733fd",
+      "expect" : "wrongPassword",
+      "file" : "export2.obscura",
+      "kind" : "export",
+      "media" : [
+        {
+          "dataSha256" : "23a67012f8c94a97e2cb461a789ed26d290d6a78a61873a5a4f60ad5f13bb19d",
+          "id" : "A3E42A38-8C9A-483D-BAE4-1AEE61FF133A",
+          "thumbSha256" : "9e4c5f1eaf56487c89aa831a72201df443f56cbcb9e4501d995426fdf5b2d15a"
+        },
+        {
+          "dataSha256" : "7d6eed88f22ae9d3378398f3c0dbb02aba4c982bba2255799c09b5b003cdfa9f",
+          "id" : "B73D3715-51FA-4CFD-81F8-863C3D37D73F",
+          "thumbSha256" : "ccbca858380c26cbb2c6cb7afaa804fe2757d92a840083c46690b37a9ad5dbf2"
+        },
+        {
+          "dataSha256" : "8e060697fc7ec400021557d05ce5f65b2fd22e3e8937ed5ce2ef411e8c261966",
+          "id" : "919120EA-50E6-417C-8F1A-714F5A286E56",
+          "thumbSha256" : "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ],
+      "password" : "not the password"
+    },
+    {
+      "databaseSha256" : "4df4d0a6b84773867180538e9d1f3c56c7caea2d7db9bb3e7911f8341cb733fd",
+      "expect" : "invalidExport",
+      "file" : "tampered/export2-flipped.obscura",
+      "kind" : "export",
+      "media" : [
+        {
+          "dataSha256" : "23a67012f8c94a97e2cb461a789ed26d290d6a78a61873a5a4f60ad5f13bb19d",
+          "id" : "A3E42A38-8C9A-483D-BAE4-1AEE61FF133A",
+          "thumbSha256" : "9e4c5f1eaf56487c89aa831a72201df443f56cbcb9e4501d995426fdf5b2d15a"
+        },
+        {
+          "dataSha256" : "7d6eed88f22ae9d3378398f3c0dbb02aba4c982bba2255799c09b5b003cdfa9f",
+          "id" : "B73D3715-51FA-4CFD-81F8-863C3D37D73F",
+          "thumbSha256" : "ccbca858380c26cbb2c6cb7afaa804fe2757d92a840083c46690b37a9ad5dbf2"
+        },
+        {
+          "dataSha256" : "8e060697fc7ec400021557d05ce5f65b2fd22e3e8937ed5ce2ef411e8c261966",
+          "id" : "919120EA-50E6-417C-8F1A-714F5A286E56",
+          "thumbSha256" : "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "databaseSha256" : "4df4d0a6b84773867180538e9d1f3c56c7caea2d7db9bb3e7911f8341cb733fd",
+      "expect" : "invalidExport",
+      "file" : "tampered/export2-truncated.obscura",
+      "kind" : "export",
+      "media" : [
+        {
+          "dataSha256" : "23a67012f8c94a97e2cb461a789ed26d290d6a78a61873a5a4f60ad5f13bb19d",
+          "id" : "A3E42A38-8C9A-483D-BAE4-1AEE61FF133A",
+          "thumbSha256" : "9e4c5f1eaf56487c89aa831a72201df443f56cbcb9e4501d995426fdf5b2d15a"
+        },
+        {
+          "dataSha256" : "7d6eed88f22ae9d3378398f3c0dbb02aba4c982bba2255799c09b5b003cdfa9f",
+          "id" : "B73D3715-51FA-4CFD-81F8-863C3D37D73F",
+          "thumbSha256" : "ccbca858380c26cbb2c6cb7afaa804fe2757d92a840083c46690b37a9ad5dbf2"
+        },
+        {
+          "dataSha256" : "8e060697fc7ec400021557d05ce5f65b2fd22e3e8937ed5ce2ef411e8c261966",
+          "id" : "919120EA-50E6-417C-8F1A-714F5A286E56",
+          "thumbSha256" : "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "databaseSha256" : "4df4d0a6b84773867180538e9d1f3c56c7caea2d7db9bb3e7911f8341cb733fd",
+      "expect" : "invalidExport",
+      "file" : "tampered/export2-last-record-dropped.obscura",
+      "kind" : "export",
+      "media" : [
+        {
+          "dataSha256" : "23a67012f8c94a97e2cb461a789ed26d290d6a78a61873a5a4f60ad5f13bb19d",
+          "id" : "A3E42A38-8C9A-483D-BAE4-1AEE61FF133A",
+          "thumbSha256" : "9e4c5f1eaf56487c89aa831a72201df443f56cbcb9e4501d995426fdf5b2d15a"
+        },
+        {
+          "dataSha256" : "7d6eed88f22ae9d3378398f3c0dbb02aba4c982bba2255799c09b5b003cdfa9f",
+          "id" : "B73D3715-51FA-4CFD-81F8-863C3D37D73F",
+          "thumbSha256" : "ccbca858380c26cbb2c6cb7afaa804fe2757d92a840083c46690b37a9ad5dbf2"
+        },
+        {
+          "dataSha256" : "8e060697fc7ec400021557d05ce5f65b2fd22e3e8937ed5ce2ef411e8c261966",
+          "id" : "919120EA-50E6-417C-8F1A-714F5A286E56",
+          "thumbSha256" : "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "databaseSha256" : "4df4d0a6b84773867180538e9d1f3c56c7caea2d7db9bb3e7911f8341cb733fd",
+      "expect" : "invalidExport",
+      "file" : "tampered/export2-reordered.obscura",
+      "kind" : "export",
+      "media" : [
+        {
+          "dataSha256" : "23a67012f8c94a97e2cb461a789ed26d290d6a78a61873a5a4f60ad5f13bb19d",
+          "id" : "A3E42A38-8C9A-483D-BAE4-1AEE61FF133A",
+          "thumbSha256" : "9e4c5f1eaf56487c89aa831a72201df443f56cbcb9e4501d995426fdf5b2d15a"
+        },
+        {
+          "dataSha256" : "7d6eed88f22ae9d3378398f3c0dbb02aba4c982bba2255799c09b5b003cdfa9f",
+          "id" : "B73D3715-51FA-4CFD-81F8-863C3D37D73F",
+          "thumbSha256" : "ccbca858380c26cbb2c6cb7afaa804fe2757d92a840083c46690b37a9ad5dbf2"
+        },
+        {
+          "dataSha256" : "8e060697fc7ec400021557d05ce5f65b2fd22e3e8937ed5ce2ef411e8c261966",
+          "id" : "919120EA-50E6-417C-8F1A-714F5A286E56",
+          "thumbSha256" : "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "databaseSha256" : "4df4d0a6b84773867180538e9d1f3c56c7caea2d7db9bb3e7911f8341cb733fd",
+      "expect" : "invalidExport",
+      "file" : "tampered/export2-appended.obscura",
+      "kind" : "export",
+      "media" : [
+        {
+          "dataSha256" : "23a67012f8c94a97e2cb461a789ed26d290d6a78a61873a5a4f60ad5f13bb19d",
+          "id" : "A3E42A38-8C9A-483D-BAE4-1AEE61FF133A",
+          "thumbSha256" : "9e4c5f1eaf56487c89aa831a72201df443f56cbcb9e4501d995426fdf5b2d15a"
+        },
+        {
+          "dataSha256" : "7d6eed88f22ae9d3378398f3c0dbb02aba4c982bba2255799c09b5b003cdfa9f",
+          "id" : "B73D3715-51FA-4CFD-81F8-863C3D37D73F",
+          "thumbSha256" : "ccbca858380c26cbb2c6cb7afaa804fe2757d92a840083c46690b37a9ad5dbf2"
+        },
+        {
+          "dataSha256" : "8e060697fc7ec400021557d05ce5f65b2fd22e3e8937ed5ce2ef411e8c261966",
+          "id" : "919120EA-50E6-417C-8F1A-714F5A286E56",
+          "thumbSha256" : "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "databaseSha256" : "4df4d0a6b84773867180538e9d1f3c56c7caea2d7db9bb3e7911f8341cb733fd",
+      "expect" : "invalidExport",
+      "file" : "tampered/export2-header-altered.obscura",
+      "kind" : "export",
+      "media" : [
+        {
+          "dataSha256" : "23a67012f8c94a97e2cb461a789ed26d290d6a78a61873a5a4f60ad5f13bb19d",
+          "id" : "A3E42A38-8C9A-483D-BAE4-1AEE61FF133A",
+          "thumbSha256" : "9e4c5f1eaf56487c89aa831a72201df443f56cbcb9e4501d995426fdf5b2d15a"
+        },
+        {
+          "dataSha256" : "7d6eed88f22ae9d3378398f3c0dbb02aba4c982bba2255799c09b5b003cdfa9f",
+          "id" : "B73D3715-51FA-4CFD-81F8-863C3D37D73F",
+          "thumbSha256" : "ccbca858380c26cbb2c6cb7afaa804fe2757d92a840083c46690b37a9ad5dbf2"
+        },
+        {
+          "dataSha256" : "8e060697fc7ec400021557d05ce5f65b2fd22e3e8937ed5ce2ef411e8c261966",
+          "id" : "919120EA-50E6-417C-8F1A-714F5A286E56",
+          "thumbSha256" : "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "databaseSha256" : "4df4d0a6b84773867180538e9d1f3c56c7caea2d7db9bb3e7911f8341cb733fd",
+      "expect" : "invalidExport",
+      "file" : "tampered/export2-key-block-altered.obscura",
+      "kind" : "export",
+      "media" : [
+        {
+          "dataSha256" : "23a67012f8c94a97e2cb461a789ed26d290d6a78a61873a5a4f60ad5f13bb19d",
+          "id" : "A3E42A38-8C9A-483D-BAE4-1AEE61FF133A",
+          "thumbSha256" : "9e4c5f1eaf56487c89aa831a72201df443f56cbcb9e4501d995426fdf5b2d15a"
+        },
+        {
+          "dataSha256" : "7d6eed88f22ae9d3378398f3c0dbb02aba4c982bba2255799c09b5b003cdfa9f",
+          "id" : "B73D3715-51FA-4CFD-81F8-863C3D37D73F",
+          "thumbSha256" : "ccbca858380c26cbb2c6cb7afaa804fe2757d92a840083c46690b37a9ad5dbf2"
+        },
+        {
+          "dataSha256" : "8e060697fc7ec400021557d05ce5f65b2fd22e3e8937ed5ce2ef411e8c261966",
+          "id" : "919120EA-50E6-417C-8F1A-714F5A286E56",
+          "thumbSha256" : "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "databaseSha256" : "4df4d0a6b84773867180538e9d1f3c56c7caea2d7db9bb3e7911f8341cb733fd",
+      "expect" : "exportNewerVersion",
+      "file" : "tampered/export2-newer.obscura",
+      "kind" : "export",
+      "media" : [
+        {
+          "dataSha256" : "23a67012f8c94a97e2cb461a789ed26d290d6a78a61873a5a4f60ad5f13bb19d",
+          "id" : "A3E42A38-8C9A-483D-BAE4-1AEE61FF133A",
+          "thumbSha256" : "9e4c5f1eaf56487c89aa831a72201df443f56cbcb9e4501d995426fdf5b2d15a"
+        },
+        {
+          "dataSha256" : "7d6eed88f22ae9d3378398f3c0dbb02aba4c982bba2255799c09b5b003cdfa9f",
+          "id" : "B73D3715-51FA-4CFD-81F8-863C3D37D73F",
+          "thumbSha256" : "ccbca858380c26cbb2c6cb7afaa804fe2757d92a840083c46690b37a9ad5dbf2"
+        },
+        {
+          "dataSha256" : "8e060697fc7ec400021557d05ce5f65b2fd22e3e8937ed5ce2ef411e8c261966",
+          "id" : "919120EA-50E6-417C-8F1A-714F5A286E56",
+          "thumbSha256" : "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "databaseSha256" : "4df4d0a6b84773867180538e9d1f3c56c7caea2d7db9bb3e7911f8341cb733fd",
+      "expect" : "exportNewerVersion",
+      "file" : "tampered/export2-required-flag.obscura",
+      "kind" : "export",
+      "media" : [
+        {
+          "dataSha256" : "23a67012f8c94a97e2cb461a789ed26d290d6a78a61873a5a4f60ad5f13bb19d",
+          "id" : "A3E42A38-8C9A-483D-BAE4-1AEE61FF133A",
+          "thumbSha256" : "9e4c5f1eaf56487c89aa831a72201df443f56cbcb9e4501d995426fdf5b2d15a"
+        },
+        {
+          "dataSha256" : "7d6eed88f22ae9d3378398f3c0dbb02aba4c982bba2255799c09b5b003cdfa9f",
+          "id" : "B73D3715-51FA-4CFD-81F8-863C3D37D73F",
+          "thumbSha256" : "ccbca858380c26cbb2c6cb7afaa804fe2757d92a840083c46690b37a9ad5dbf2"
+        },
+        {
+          "dataSha256" : "8e060697fc7ec400021557d05ce5f65b2fd22e3e8937ed5ce2ef411e8c261966",
+          "id" : "919120EA-50E6-417C-8F1A-714F5A286E56",
+          "thumbSha256" : "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "expect" : "opens",
+      "file" : "shared-password.obscurashared",
+      "items" : [
+        {
+          "kind" : "photo",
+          "parts" : [
+            {
+              "count" : 9000,
+              "role" : "file",
+              "seed" : 21
+            }
+          ],
+          "type" : "image/jpeg"
+        },
+        {
+          "kind" : "gif",
+          "parts" : [
+            {
+              "count" : 800,
+              "role" : "file",
+              "seed" : 22
+            }
+          ],
+          "type" : "image/gif"
+        },
+        {
+          "kind" : "video",
+          "parts" : [
+            {
+              "count" : 12000,
+              "role" : "file",
+              "seed" : 23
+            }
+          ],
+          "type" : "video/quicktime"
+        },
+        {
+          "kind" : "livePhoto",
+          "parts" : [
+            {
+              "count" : 3000,
+              "role" : "file",
+              "seed" : 24
+            },
+            {
+              "count" : 4100,
+              "role" : "motion",
+              "seed" : 25
+            }
+          ],
+          "type" : "image/heic"
+        },
+        {
+          "kind" : "pdf",
+          "name" : "Lease, M\u00fcller \u65e5\u672c",
+          "parts" : [
+            {
+              "count" : 1500,
+              "role" : "file",
+              "seed" : 26
+            }
+          ],
+          "type" : "application/pdf"
+        }
+      ],
+      "kind" : "sharedItems",
+      "password" : "swift shared pass"
+    },
+    {
+      "expect" : "opens",
+      "file" : "shared-open.obscurashared",
+      "items" : [
+        {
+          "kind" : "photo",
+          "parts" : [
+            {
+              "count" : 9000,
+              "role" : "file",
+              "seed" : 21
+            }
+          ],
+          "type" : "image/jpeg"
+        },
+        {
+          "kind" : "gif",
+          "parts" : [
+            {
+              "count" : 800,
+              "role" : "file",
+              "seed" : 22
+            }
+          ],
+          "type" : "image/gif"
+        },
+        {
+          "kind" : "video",
+          "parts" : [
+            {
+              "count" : 12000,
+              "role" : "file",
+              "seed" : 23
+            }
+          ],
+          "type" : "video/quicktime"
+        },
+        {
+          "kind" : "livePhoto",
+          "parts" : [
+            {
+              "count" : 3000,
+              "role" : "file",
+              "seed" : 24
+            },
+            {
+              "count" : 4100,
+              "role" : "motion",
+              "seed" : 25
+            }
+          ],
+          "type" : "image/heic"
+        },
+        {
+          "kind" : "pdf",
+          "name" : "Lease, M\u00fcller \u65e5\u672c",
+          "parts" : [
+            {
+              "count" : 1500,
+              "role" : "file",
+              "seed" : 26
+            }
+          ],
+          "type" : "application/pdf"
+        }
+      ],
+      "kind" : "sharedItems"
+    },
+    {
+      "expect" : "wrongPassword",
+      "file" : "shared-password.obscurashared",
+      "items" : [
+        {
+          "kind" : "photo",
+          "parts" : [
+            {
+              "count" : 9000,
+              "role" : "file",
+              "seed" : 21
+            }
+          ],
+          "type" : "image/jpeg"
+        },
+        {
+          "kind" : "gif",
+          "parts" : [
+            {
+              "count" : 800,
+              "role" : "file",
+              "seed" : 22
+            }
+          ],
+          "type" : "image/gif"
+        },
+        {
+          "kind" : "video",
+          "parts" : [
+            {
+              "count" : 12000,
+              "role" : "file",
+              "seed" : 23
+            }
+          ],
+          "type" : "video/quicktime"
+        },
+        {
+          "kind" : "livePhoto",
+          "parts" : [
+            {
+              "count" : 3000,
+              "role" : "file",
+              "seed" : 24
+            },
+            {
+              "count" : 4100,
+              "role" : "motion",
+              "seed" : 25
+            }
+          ],
+          "type" : "image/heic"
+        },
+        {
+          "kind" : "pdf",
+          "name" : "Lease, M\u00fcller \u65e5\u672c",
+          "parts" : [
+            {
+              "count" : 1500,
+              "role" : "file",
+              "seed" : 26
+            }
+          ],
+          "type" : "application/pdf"
+        }
+      ],
+      "kind" : "sharedItems",
+      "password" : "not the password"
+    },
+    {
+      "expect" : "sharedItemsNotLocked",
+      "file" : "shared-open.obscurashared",
+      "items" : [
+        {
+          "kind" : "photo",
+          "parts" : [
+            {
+              "count" : 9000,
+              "role" : "file",
+              "seed" : 21
+            }
+          ],
+          "type" : "image/jpeg"
+        },
+        {
+          "kind" : "gif",
+          "parts" : [
+            {
+              "count" : 800,
+              "role" : "file",
+              "seed" : 22
+            }
+          ],
+          "type" : "image/gif"
+        },
+        {
+          "kind" : "video",
+          "parts" : [
+            {
+              "count" : 12000,
+              "role" : "file",
+              "seed" : 23
+            }
+          ],
+          "type" : "video/quicktime"
+        },
+        {
+          "kind" : "livePhoto",
+          "parts" : [
+            {
+              "count" : 3000,
+              "role" : "file",
+              "seed" : 24
+            },
+            {
+              "count" : 4100,
+              "role" : "motion",
+              "seed" : 25
+            }
+          ],
+          "type" : "image/heic"
+        },
+        {
+          "kind" : "pdf",
+          "name" : "Lease, M\u00fcller \u65e5\u672c",
+          "parts" : [
+            {
+              "count" : 1500,
+              "role" : "file",
+              "seed" : 26
+            }
+          ],
+          "type" : "application/pdf"
+        }
+      ],
+      "kind" : "sharedItems",
+      "password" : "swift shared pass"
+    },
+    {
+      "expect" : "sharedItemsDamaged",
+      "file" : "tampered/shared-flipped.obscurashared",
+      "items" : [
+        {
+          "kind" : "photo",
+          "parts" : [
+            {
+              "count" : 9000,
+              "role" : "file",
+              "seed" : 21
+            }
+          ],
+          "type" : "image/jpeg"
+        },
+        {
+          "kind" : "gif",
+          "parts" : [
+            {
+              "count" : 800,
+              "role" : "file",
+              "seed" : 22
+            }
+          ],
+          "type" : "image/gif"
+        },
+        {
+          "kind" : "video",
+          "parts" : [
+            {
+              "count" : 12000,
+              "role" : "file",
+              "seed" : 23
+            }
+          ],
+          "type" : "video/quicktime"
+        },
+        {
+          "kind" : "livePhoto",
+          "parts" : [
+            {
+              "count" : 3000,
+              "role" : "file",
+              "seed" : 24
+            },
+            {
+              "count" : 4100,
+              "role" : "motion",
+              "seed" : 25
+            }
+          ],
+          "type" : "image/heic"
+        },
+        {
+          "kind" : "pdf",
+          "name" : "Lease, M\u00fcller \u65e5\u672c",
+          "parts" : [
+            {
+              "count" : 1500,
+              "role" : "file",
+              "seed" : 26
+            }
+          ],
+          "type" : "application/pdf"
+        }
+      ],
+      "kind" : "sharedItems"
+    },
+    {
+      "expect" : "sharedItemsDamaged",
+      "file" : "tampered/shared-header.obscurashared",
+      "items" : [
+        {
+          "kind" : "photo",
+          "parts" : [
+            {
+              "count" : 9000,
+              "role" : "file",
+              "seed" : 21
+            }
+          ],
+          "type" : "image/jpeg"
+        },
+        {
+          "kind" : "gif",
+          "parts" : [
+            {
+              "count" : 800,
+              "role" : "file",
+              "seed" : 22
+            }
+          ],
+          "type" : "image/gif"
+        },
+        {
+          "kind" : "video",
+          "parts" : [
+            {
+              "count" : 12000,
+              "role" : "file",
+              "seed" : 23
+            }
+          ],
+          "type" : "video/quicktime"
+        },
+        {
+          "kind" : "livePhoto",
+          "parts" : [
+            {
+              "count" : 3000,
+              "role" : "file",
+              "seed" : 24
+            },
+            {
+              "count" : 4100,
+              "role" : "motion",
+              "seed" : 25
+            }
+          ],
+          "type" : "image/heic"
+        },
+        {
+          "kind" : "pdf",
+          "name" : "Lease, M\u00fcller \u65e5\u672c",
+          "parts" : [
+            {
+              "count" : 1500,
+              "role" : "file",
+              "seed" : 26
+            }
+          ],
+          "type" : "application/pdf"
+        }
+      ],
+      "kind" : "sharedItems"
+    },
+    {
+      "expect" : "wrongPassword",
+      "file" : "tampered/shared-lock-header.obscurashared",
+      "items" : [
+        {
+          "kind" : "photo",
+          "parts" : [
+            {
+              "count" : 9000,
+              "role" : "file",
+              "seed" : 21
+            }
+          ],
+          "type" : "image/jpeg"
+        },
+        {
+          "kind" : "gif",
+          "parts" : [
+            {
+              "count" : 800,
+              "role" : "file",
+              "seed" : 22
+            }
+          ],
+          "type" : "image/gif"
+        },
+        {
+          "kind" : "video",
+          "parts" : [
+            {
+              "count" : 12000,
+              "role" : "file",
+              "seed" : 23
+            }
+          ],
+          "type" : "video/quicktime"
+        },
+        {
+          "kind" : "livePhoto",
+          "parts" : [
+            {
+              "count" : 3000,
+              "role" : "file",
+              "seed" : 24
+            },
+            {
+              "count" : 4100,
+              "role" : "motion",
+              "seed" : 25
+            }
+          ],
+          "type" : "image/heic"
+        },
+        {
+          "kind" : "pdf",
+          "name" : "Lease, M\u00fcller \u65e5\u672c",
+          "parts" : [
+            {
+              "count" : 1500,
+              "role" : "file",
+              "seed" : 26
+            }
+          ],
+          "type" : "application/pdf"
+        }
+      ],
+      "kind" : "sharedItems",
+      "password" : "swift shared pass"
+    },
+    {
+      "expect" : "sharedItemsDamaged",
+      "file" : "tampered/shared-commitment.obscurashared",
+      "items" : [
+        {
+          "kind" : "photo",
+          "parts" : [
+            {
+              "count" : 9000,
+              "role" : "file",
+              "seed" : 21
+            }
+          ],
+          "type" : "image/jpeg"
+        },
+        {
+          "kind" : "gif",
+          "parts" : [
+            {
+              "count" : 800,
+              "role" : "file",
+              "seed" : 22
+            }
+          ],
+          "type" : "image/gif"
+        },
+        {
+          "kind" : "video",
+          "parts" : [
+            {
+              "count" : 12000,
+              "role" : "file",
+              "seed" : 23
+            }
+          ],
+          "type" : "video/quicktime"
+        },
+        {
+          "kind" : "livePhoto",
+          "parts" : [
+            {
+              "count" : 3000,
+              "role" : "file",
+              "seed" : 24
+            },
+            {
+              "count" : 4100,
+              "role" : "motion",
+              "seed" : 25
+            }
+          ],
+          "type" : "image/heic"
+        },
+        {
+          "kind" : "pdf",
+          "name" : "Lease, M\u00fcller \u65e5\u672c",
+          "parts" : [
+            {
+              "count" : 1500,
+              "role" : "file",
+              "seed" : 26
+            }
+          ],
+          "type" : "application/pdf"
+        }
+      ],
+      "kind" : "sharedItems"
+    },
+    {
+      "expect" : "wrongPassword",
+      "file" : "tampered/shared-lock-commitment.obscurashared",
+      "items" : [
+        {
+          "kind" : "photo",
+          "parts" : [
+            {
+              "count" : 9000,
+              "role" : "file",
+              "seed" : 21
+            }
+          ],
+          "type" : "image/jpeg"
+        },
+        {
+          "kind" : "gif",
+          "parts" : [
+            {
+              "count" : 800,
+              "role" : "file",
+              "seed" : 22
+            }
+          ],
+          "type" : "image/gif"
+        },
+        {
+          "kind" : "video",
+          "parts" : [
+            {
+              "count" : 12000,
+              "role" : "file",
+              "seed" : 23
+            }
+          ],
+          "type" : "video/quicktime"
+        },
+        {
+          "kind" : "livePhoto",
+          "parts" : [
+            {
+              "count" : 3000,
+              "role" : "file",
+              "seed" : 24
+            },
+            {
+              "count" : 4100,
+              "role" : "motion",
+              "seed" : 25
+            }
+          ],
+          "type" : "image/heic"
+        },
+        {
+          "kind" : "pdf",
+          "name" : "Lease, M\u00fcller \u65e5\u672c",
+          "parts" : [
+            {
+              "count" : 1500,
+              "role" : "file",
+              "seed" : 26
+            }
+          ],
+          "type" : "application/pdf"
+        }
+      ],
+      "kind" : "sharedItems",
+      "password" : "swift shared pass"
+    },
+    {
+      "expect" : "sharedItemsDamaged",
+      "file" : "tampered/shared-swapped.obscurashared",
+      "items" : [
+        {
+          "kind" : "photo",
+          "parts" : [
+            {
+              "count" : 9000,
+              "role" : "file",
+              "seed" : 21
+            }
+          ],
+          "type" : "image/jpeg"
+        },
+        {
+          "kind" : "gif",
+          "parts" : [
+            {
+              "count" : 800,
+              "role" : "file",
+              "seed" : 22
+            }
+          ],
+          "type" : "image/gif"
+        },
+        {
+          "kind" : "video",
+          "parts" : [
+            {
+              "count" : 12000,
+              "role" : "file",
+              "seed" : 23
+            }
+          ],
+          "type" : "video/quicktime"
+        },
+        {
+          "kind" : "livePhoto",
+          "parts" : [
+            {
+              "count" : 3000,
+              "role" : "file",
+              "seed" : 24
+            },
+            {
+              "count" : 4100,
+              "role" : "motion",
+              "seed" : 25
+            }
+          ],
+          "type" : "image/heic"
+        },
+        {
+          "kind" : "pdf",
+          "name" : "Lease, M\u00fcller \u65e5\u672c",
+          "parts" : [
+            {
+              "count" : 1500,
+              "role" : "file",
+              "seed" : 26
+            }
+          ],
+          "type" : "application/pdf"
+        }
+      ],
+      "kind" : "sharedItems"
+    },
+    {
+      "expect" : "sharedItemsDamaged",
+      "file" : "tampered/shared-truncated.obscurashared",
+      "items" : [
+        {
+          "kind" : "photo",
+          "parts" : [
+            {
+              "count" : 9000,
+              "role" : "file",
+              "seed" : 21
+            }
+          ],
+          "type" : "image/jpeg"
+        },
+        {
+          "kind" : "gif",
+          "parts" : [
+            {
+              "count" : 800,
+              "role" : "file",
+              "seed" : 22
+            }
+          ],
+          "type" : "image/gif"
+        },
+        {
+          "kind" : "video",
+          "parts" : [
+            {
+              "count" : 12000,
+              "role" : "file",
+              "seed" : 23
+            }
+          ],
+          "type" : "video/quicktime"
+        },
+        {
+          "kind" : "livePhoto",
+          "parts" : [
+            {
+              "count" : 3000,
+              "role" : "file",
+              "seed" : 24
+            },
+            {
+              "count" : 4100,
+              "role" : "motion",
+              "seed" : 25
+            }
+          ],
+          "type" : "image/heic"
+        },
+        {
+          "kind" : "pdf",
+          "name" : "Lease, M\u00fcller \u65e5\u672c",
+          "parts" : [
+            {
+              "count" : 1500,
+              "role" : "file",
+              "seed" : 26
+            }
+          ],
+          "type" : "application/pdf"
+        }
+      ],
+      "kind" : "sharedItems"
+    },
+    {
+      "expect" : "sharedItemsDamaged",
+      "file" : "tampered/shared-cut.obscurashared",
+      "items" : [
+        {
+          "kind" : "photo",
+          "parts" : [
+            {
+              "count" : 9000,
+              "role" : "file",
+              "seed" : 21
+            }
+          ],
+          "type" : "image/jpeg"
+        },
+        {
+          "kind" : "gif",
+          "parts" : [
+            {
+              "count" : 800,
+              "role" : "file",
+              "seed" : 22
+            }
+          ],
+          "type" : "image/gif"
+        },
+        {
+          "kind" : "video",
+          "parts" : [
+            {
+              "count" : 12000,
+              "role" : "file",
+              "seed" : 23
+            }
+          ],
+          "type" : "video/quicktime"
+        },
+        {
+          "kind" : "livePhoto",
+          "parts" : [
+            {
+              "count" : 3000,
+              "role" : "file",
+              "seed" : 24
+            },
+            {
+              "count" : 4100,
+              "role" : "motion",
+              "seed" : 25
+            }
+          ],
+          "type" : "image/heic"
+        },
+        {
+          "kind" : "pdf",
+          "name" : "Lease, M\u00fcller \u65e5\u672c",
+          "parts" : [
+            {
+              "count" : 1500,
+              "role" : "file",
+              "seed" : 26
+            }
+          ],
+          "type" : "application/pdf"
+        }
+      ],
+      "kind" : "sharedItems"
+    },
+    {
+      "expect" : "sharedItemsDamaged",
+      "file" : "tampered/shared-appended.obscurashared",
+      "items" : [
+        {
+          "kind" : "photo",
+          "parts" : [
+            {
+              "count" : 9000,
+              "role" : "file",
+              "seed" : 21
+            }
+          ],
+          "type" : "image/jpeg"
+        },
+        {
+          "kind" : "gif",
+          "parts" : [
+            {
+              "count" : 800,
+              "role" : "file",
+              "seed" : 22
+            }
+          ],
+          "type" : "image/gif"
+        },
+        {
+          "kind" : "video",
+          "parts" : [
+            {
+              "count" : 12000,
+              "role" : "file",
+              "seed" : 23
+            }
+          ],
+          "type" : "video/quicktime"
+        },
+        {
+          "kind" : "livePhoto",
+          "parts" : [
+            {
+              "count" : 3000,
+              "role" : "file",
+              "seed" : 24
+            },
+            {
+              "count" : 4100,
+              "role" : "motion",
+              "seed" : 25
+            }
+          ],
+          "type" : "image/heic"
+        },
+        {
+          "kind" : "pdf",
+          "name" : "Lease, M\u00fcller \u65e5\u672c",
+          "parts" : [
+            {
+              "count" : 1500,
+              "role" : "file",
+              "seed" : 26
+            }
+          ],
+          "type" : "application/pdf"
+        }
+      ],
+      "kind" : "sharedItems"
+    },
+    {
+      "expect" : "sharedItemsNewerVersion",
+      "file" : "tampered/shared-newer.obscurashared",
+      "items" : [
+        {
+          "kind" : "photo",
+          "parts" : [
+            {
+              "count" : 9000,
+              "role" : "file",
+              "seed" : 21
+            }
+          ],
+          "type" : "image/jpeg"
+        },
+        {
+          "kind" : "gif",
+          "parts" : [
+            {
+              "count" : 800,
+              "role" : "file",
+              "seed" : 22
+            }
+          ],
+          "type" : "image/gif"
+        },
+        {
+          "kind" : "video",
+          "parts" : [
+            {
+              "count" : 12000,
+              "role" : "file",
+              "seed" : 23
+            }
+          ],
+          "type" : "video/quicktime"
+        },
+        {
+          "kind" : "livePhoto",
+          "parts" : [
+            {
+              "count" : 3000,
+              "role" : "file",
+              "seed" : 24
+            },
+            {
+              "count" : 4100,
+              "role" : "motion",
+              "seed" : 25
+            }
+          ],
+          "type" : "image/heic"
+        },
+        {
+          "kind" : "pdf",
+          "name" : "Lease, M\u00fcller \u65e5\u672c",
+          "parts" : [
+            {
+              "count" : 1500,
+              "role" : "file",
+              "seed" : 26
+            }
+          ],
+          "type" : "application/pdf"
+        }
+      ],
+      "kind" : "sharedItems"
+    },
+    {
+      "expect" : "invalidSharedItems",
+      "file" : "tampered/shared-rounds.obscurashared",
+      "items" : [
+        {
+          "kind" : "photo",
+          "parts" : [
+            {
+              "count" : 9000,
+              "role" : "file",
+              "seed" : 21
+            }
+          ],
+          "type" : "image/jpeg"
+        },
+        {
+          "kind" : "gif",
+          "parts" : [
+            {
+              "count" : 800,
+              "role" : "file",
+              "seed" : 22
+            }
+          ],
+          "type" : "image/gif"
+        },
+        {
+          "kind" : "video",
+          "parts" : [
+            {
+              "count" : 12000,
+              "role" : "file",
+              "seed" : 23
+            }
+          ],
+          "type" : "video/quicktime"
+        },
+        {
+          "kind" : "livePhoto",
+          "parts" : [
+            {
+              "count" : 3000,
+              "role" : "file",
+              "seed" : 24
+            },
+            {
+              "count" : 4100,
+              "role" : "motion",
+              "seed" : 25
+            }
+          ],
+          "type" : "image/heic"
+        },
+        {
+          "kind" : "pdf",
+          "name" : "Lease, M\u00fcller \u65e5\u672c",
+          "parts" : [
+            {
+              "count" : 1500,
+              "role" : "file",
+              "seed" : 26
+            }
+          ],
+          "type" : "application/pdf"
+        }
+      ],
+      "kind" : "sharedItems",
+      "password" : "swift shared pass"
+    },
+    {
+      "expect" : "sharedItemsDamaged",
+      "file" : "tampered/shared-padding.obscurashared",
+      "items" : [
+        {
+          "kind" : "photo",
+          "parts" : [
+            {
+              "count" : 9000,
+              "role" : "file",
+              "seed" : 21
+            }
+          ],
+          "type" : "image/jpeg"
+        },
+        {
+          "kind" : "gif",
+          "parts" : [
+            {
+              "count" : 800,
+              "role" : "file",
+              "seed" : 22
+            }
+          ],
+          "type" : "image/gif"
+        },
+        {
+          "kind" : "video",
+          "parts" : [
+            {
+              "count" : 12000,
+              "role" : "file",
+              "seed" : 23
+            }
+          ],
+          "type" : "video/quicktime"
+        },
+        {
+          "kind" : "livePhoto",
+          "parts" : [
+            {
+              "count" : 3000,
+              "role" : "file",
+              "seed" : 24
+            },
+            {
+              "count" : 4100,
+              "role" : "motion",
+              "seed" : 25
+            }
+          ],
+          "type" : "image/heic"
+        },
+        {
+          "kind" : "pdf",
+          "name" : "Lease, M\u00fcller \u65e5\u672c",
+          "parts" : [
+            {
+              "count" : 1500,
+              "role" : "file",
+              "seed" : 26
+            }
+          ],
+          "type" : "application/pdf"
+        }
+      ],
+      "kind" : "sharedItems"
+    },
+    {
+      "expect" : "sharedItemsDamaged",
+      "file" : "tampered/shared-twice.obscurashared",
+      "items" : [
+        {
+          "kind" : "photo",
+          "parts" : [
+            {
+              "count" : 9000,
+              "role" : "file",
+              "seed" : 21
+            }
+          ],
+          "type" : "image/jpeg"
+        },
+        {
+          "kind" : "gif",
+          "parts" : [
+            {
+              "count" : 800,
+              "role" : "file",
+              "seed" : 22
+            }
+          ],
+          "type" : "image/gif"
+        },
+        {
+          "kind" : "video",
+          "parts" : [
+            {
+              "count" : 12000,
+              "role" : "file",
+              "seed" : 23
+            }
+          ],
+          "type" : "video/quicktime"
+        },
+        {
+          "kind" : "livePhoto",
+          "parts" : [
+            {
+              "count" : 3000,
+              "role" : "file",
+              "seed" : 24
+            },
+            {
+              "count" : 4100,
+              "role" : "motion",
+              "seed" : 25
+            }
+          ],
+          "type" : "image/heic"
+        },
+        {
+          "kind" : "pdf",
+          "name" : "Lease, M\u00fcller \u65e5\u672c",
+          "parts" : [
+            {
+              "count" : 1500,
+              "role" : "file",
+              "seed" : 26
+            }
+          ],
+          "type" : "application/pdf"
+        }
+      ],
+      "kind" : "sharedItems"
+    },
+    {
+      "expect" : "sharedItemsDamaged",
+      "file" : "tampered/shared-fraction.obscurashared",
+      "items" : [
+        {
+          "kind" : "photo",
+          "parts" : [
+            {
+              "count" : 9000,
+              "role" : "file",
+              "seed" : 21
+            }
+          ],
+          "type" : "image/jpeg"
+        },
+        {
+          "kind" : "gif",
+          "parts" : [
+            {
+              "count" : 800,
+              "role" : "file",
+              "seed" : 22
+            }
+          ],
+          "type" : "image/gif"
+        },
+        {
+          "kind" : "video",
+          "parts" : [
+            {
+              "count" : 12000,
+              "role" : "file",
+              "seed" : 23
+            }
+          ],
+          "type" : "video/quicktime"
+        },
+        {
+          "kind" : "livePhoto",
+          "parts" : [
+            {
+              "count" : 3000,
+              "role" : "file",
+              "seed" : 24
+            },
+            {
+              "count" : 4100,
+              "role" : "motion",
+              "seed" : 25
+            }
+          ],
+          "type" : "image/heic"
+        },
+        {
+          "kind" : "pdf",
+          "name" : "Lease, M\u00fcller \u65e5\u672c",
+          "parts" : [
+            {
+              "count" : 1500,
+              "role" : "file",
+              "seed" : 26
+            }
+          ],
+          "type" : "application/pdf"
+        }
+      ],
+      "kind" : "sharedItems"
+    },
+    {
+      "expect" : "sharedItemsDamaged",
+      "file" : "tampered/shared-bom.obscurashared",
+      "items" : [
+        {
+          "kind" : "photo",
+          "parts" : [
+            {
+              "count" : 9000,
+              "role" : "file",
+              "seed" : 21
+            }
+          ],
+          "type" : "image/jpeg"
+        },
+        {
+          "kind" : "gif",
+          "parts" : [
+            {
+              "count" : 800,
+              "role" : "file",
+              "seed" : 22
+            }
+          ],
+          "type" : "image/gif"
+        },
+        {
+          "kind" : "video",
+          "parts" : [
+            {
+              "count" : 12000,
+              "role" : "file",
+              "seed" : 23
+            }
+          ],
+          "type" : "video/quicktime"
+        },
+        {
+          "kind" : "livePhoto",
+          "parts" : [
+            {
+              "count" : 3000,
+              "role" : "file",
+              "seed" : 24
+            },
+            {
+              "count" : 4100,
+              "role" : "motion",
+              "seed" : 25
+            }
+          ],
+          "type" : "image/heic"
+        },
+        {
+          "kind" : "pdf",
+          "name" : "Lease, M\u00fcller \u65e5\u672c",
+          "parts" : [
+            {
+              "count" : 1500,
+              "role" : "file",
+              "seed" : 26
+            }
+          ],
+          "type" : "application/pdf"
+        }
+      ],
+      "kind" : "sharedItems"
+    },
+    {
+      "expect" : "sharedItemsDamaged",
+      "file" : "tampered/shared-title.obscurashared",
+      "items" : [
+        {
+          "kind" : "photo",
+          "parts" : [
+            {
+              "count" : 9000,
+              "role" : "file",
+              "seed" : 21
+            }
+          ],
+          "type" : "image/jpeg"
+        },
+        {
+          "kind" : "gif",
+          "parts" : [
+            {
+              "count" : 800,
+              "role" : "file",
+              "seed" : 22
+            }
+          ],
+          "type" : "image/gif"
+        },
+        {
+          "kind" : "video",
+          "parts" : [
+            {
+              "count" : 12000,
+              "role" : "file",
+              "seed" : 23
+            }
+          ],
+          "type" : "video/quicktime"
+        },
+        {
+          "kind" : "livePhoto",
+          "parts" : [
+            {
+              "count" : 3000,
+              "role" : "file",
+              "seed" : 24
+            },
+            {
+              "count" : 4100,
+              "role" : "motion",
+              "seed" : 25
+            }
+          ],
+          "type" : "image/heic"
+        },
+        {
+          "kind" : "pdf",
+          "name" : "Lease, M\u00fcller \u65e5\u672c",
+          "parts" : [
+            {
+              "count" : 1500,
+              "role" : "file",
+              "seed" : 26
+            }
+          ],
+          "type" : "application/pdf"
+        }
+      ],
+      "kind" : "sharedItems"
+    },
+    {
+      "expect" : "sharedItemsDamaged",
+      "file" : "tampered/shared-invisible.obscurashared",
+      "items" : [
+        {
+          "kind" : "photo",
+          "parts" : [
+            {
+              "count" : 9000,
+              "role" : "file",
+              "seed" : 21
+            }
+          ],
+          "type" : "image/jpeg"
+        },
+        {
+          "kind" : "gif",
+          "parts" : [
+            {
+              "count" : 800,
+              "role" : "file",
+              "seed" : 22
+            }
+          ],
+          "type" : "image/gif"
+        },
+        {
+          "kind" : "video",
+          "parts" : [
+            {
+              "count" : 12000,
+              "role" : "file",
+              "seed" : 23
+            }
+          ],
+          "type" : "video/quicktime"
+        },
+        {
+          "kind" : "livePhoto",
+          "parts" : [
+            {
+              "count" : 3000,
+              "role" : "file",
+              "seed" : 24
+            },
+            {
+              "count" : 4100,
+              "role" : "motion",
+              "seed" : 25
+            }
+          ],
+          "type" : "image/heic"
+        },
+        {
+          "kind" : "pdf",
+          "name" : "Lease, M\u00fcller \u65e5\u672c",
+          "parts" : [
+            {
+              "count" : 1500,
+              "role" : "file",
+              "seed" : 26
+            }
+          ],
+          "type" : "application/pdf"
+        }
+      ],
+      "kind" : "sharedItems"
     }
   ],
   "databaseSize" : 7654321,
   "folder" : {
-    "folderKeyEncrypted" : "TppOKegJi1A5VM02cFYTqV2lg64NsbjiI3Ms0qfVSvUXx9RjGdGvEYsHTCbKRX8wPOVKcY9DYiLw9BD3",
-    "passwordHash" : "IosBdIZiOrr8BMnUGcht9awT1suIxJin2j+3HutjsSo=",
-    "passwordSalt" : "m1zBvb/M75sEaHDh9NAMmzG252aTzq32ufOzzv4+m6E="
+    "folderKeyEncrypted" : "CLVdjDhGny6OMJulciJTY1kwLPfR365QYa+jkux7x7q1bp5u0ZBvyyzCGKDuBHJy/5sZGu5goMVDfPjQ",
+    "passwordHash" : "6ism5/SjJ6OhxM58colHVJouEov1KFyDsUQFBBBn2Gk=",
+    "passwordSalt" : "R/tXNEOO2rik2jJ2hrBbiIUBCLZi+AxotGfDuGgKlx4="
   },
-  "folderKeyFingerprint" : "6fd2d71fcca765dd",
+  "folderKeyFingerprint" : "34a1098998d4a7c7",
   "folderPassword" : "swift folder pass 1",
   "format" : 1,
-  "generatedBy" : "ObscuraCrypto Swift 1.1.0",
-  "masterKeyFingerprint" : "13f86585eab53def",
+  "generatedBy" : "ObscuraCrypto Swift 1.2.0",
+  "masterKeyFingerprint" : "eeb0e2eec8c9fe49",
   "vaultPassword" : "swift p\u00e4ssword \ud83d\udd10"
 }

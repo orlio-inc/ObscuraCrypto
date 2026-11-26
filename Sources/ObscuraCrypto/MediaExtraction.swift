@@ -14,6 +14,19 @@ public enum MediaExtraction {
         case notOpenedByMasterKey
     }
 
+    /// A media ID as the apps write them: a UUID in the 36-character
+    /// 8-4-4-4-12 form, in either case. `UUID(uuidString:)` alone is not
+    /// enough: it stops reading at a NUL byte, so `"<uuid>\0/../x"` passes it.
+    public static func isMediaID(_ id: String) -> Bool {
+        let bytes = Array(id.utf8)
+        guard bytes.count == 36 else { return false }
+        return bytes.enumerated().allSatisfy { index, byte in
+            [8, 13, 18, 23].contains(index)
+                ? byte == UInt8(ascii: "-")
+                : (0x30...0x39).contains(byte) || (0x41...0x46).contains(byte) || (0x61...0x66).contains(byte)
+        }
+    }
+
     /// Decrypts a stored `.data.enc` file, single-shot or chunked, into
     /// `directory` as `<id>.<extension>`, the extension chosen from what the
     /// decrypted bytes actually are.
@@ -28,8 +41,8 @@ public enum MediaExtraction {
         folderKey: SecureBytes? = nil,
         into directory: URL
     ) throws -> Outcome {
-        guard UUID(uuidString: id) != nil else {
-            throw ObscuraCryptoError.invalidExport("\(id) is not a media ID")
+        guard isMediaID(id) else {
+            throw ObscuraCryptoError.invalidExport("not a media ID")
         }
         let temporary = directory.appendingPathComponent(".\(id).\(UUID().uuidString).partial")
         defer { try? FileManager.default.removeItem(at: temporary) }
@@ -85,6 +98,7 @@ public enum MediaExtraction {
         if starts([0xFF, 0xD8, 0xFF]) { return "jpg" }
         if starts([0x89, 0x50, 0x4E, 0x47]) { return "png" }
         if starts(Array("GIF8".utf8)) { return "gif" }
+        if starts(Array("%PDF".utf8)) { return "pdf" }
         if starts(Array("RIFF".utf8)) && starts(Array("WEBP".utf8), at: 8) { return "webp" }
         if starts([0x49, 0x49, 0x2A, 0x00]) || starts([0x4D, 0x4D, 0x00, 0x2A]) { return "tiff" }
         if starts(Array("ftyp".utf8), at: 4), bytes.count >= 12 {

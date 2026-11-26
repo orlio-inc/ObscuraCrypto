@@ -62,6 +62,9 @@ sealed class ObscuraCryptoException(message: String) : Exception(message) {
     class InvalidExport(val reason: String) :
         ObscuraCryptoException("Not a valid .obscura export: $reason")
 
+    /** An `.obscura` export only a newer version can read. */
+    class ExportNewerVersion : ObscuraCryptoException("The .obscura export needs a newer version of Obscura")
+
     /** A recovery phrase did not have 24 words. */
     class RecoveryPhraseWrongLength(val count: Int) :
         ObscuraCryptoException("A recovery phrase has 24 words, not $count")
@@ -76,6 +79,27 @@ sealed class ObscuraCryptoException(message: String) : Exception(message) {
      */
     class RecoveryPhraseChecksumMismatch :
         ObscuraCryptoException("The recovery phrase's checksum does not match: a word is wrong or out of place")
+
+    /** Not an `.obscurashared` file, or one no app could have written. */
+    class InvalidSharedItems(val reason: String) :
+        ObscuraCryptoException("Not a valid .obscurashared file: $reason")
+
+    /** An `.obscurashared` file whose key opened but whose contents were altered, cut short or reordered. */
+    class SharedItemsDamaged(val reason: String) :
+        ObscuraCryptoException("The .obscurashared file is damaged: $reason")
+
+    /** An `.obscurashared` file only a newer version can read. */
+    class SharedItemsNewerVersion :
+        ObscuraCryptoException("The .obscurashared file needs a newer version of Obscura")
+
+    /** A password was given for an `.obscurashared` file sent without one. */
+    class SharedItemsNotLocked : ObscuraCryptoException(
+        "The .obscurashared file has no password, though one was given: anyone who had the file could have made or changed it",
+    )
+
+    /** An `.obscurashared` file holds 1 to 1,000 items. */
+    class TooManySharedItems(val count: Int) :
+        ObscuraCryptoException("A .obscurashared file holds 1 to 1,000 items, not $count")
 
     override fun equals(other: Any?): Boolean =
         other is ObscuraCryptoException && other::class == this::class && other.message == message

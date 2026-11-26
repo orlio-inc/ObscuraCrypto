@@ -39,7 +39,7 @@ final class CompatFixtureTests: XCTestCase {
         guard let path = ProcessInfo.processInfo.environment["OBSCURA_WRITE_SWIFT_FIXTURES"] else {
             throw XCTSkip("set OBSCURA_WRITE_SWIFT_FIXTURES to the FromSwift directory to rewrite it")
         }
-        try CompatWriter.write(to: URL(fileURLWithPath: path), generatedBy: "ObscuraCrypto Swift 1.1.0")
+        try CompatWriter.write(to: URL(fileURLWithPath: path), generatedBy: "ObscuraCrypto Swift 1.2.0")
     }
 
     // MARK: Verifying
@@ -116,6 +116,9 @@ final class CompatFixtureTests: XCTestCase {
             try require(try Data(contentsOf: output) == plaintext(), "plaintext differs")
             try require(UInt32(entry["chunkSize"] as! Int) == reader.header.chunkPlaintextSize, "chunk size")
             try require(reader.header.hasFolderLayer == withFolder, "folder flag")
+            if let version = entry["version"] as? Int {
+                try require(Int(reader.header.formatVersion) == version, "format version")
+            }
         case "export":
             let password = entry["password"] as? String ?? vaultPassword
             let archive = try ExportArchive(url: file, password: password)
@@ -125,9 +128,8 @@ final class CompatFixtureTests: XCTestCase {
             let scratch = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
             try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
             defer { try? FileManager.default.removeItem(at: scratch) }
-            // The Swift reader skips the vault file rather than writing it out, so
-            // hash it by reading the same records through the archive's own stream.
-            try archive.skipDatabase()
+            let database = try archive.read(Int(archive.index.databaseSize))
+            try require(CompatWriter.sha256(database) == entry["databaseSha256"] as? String, "database")
             let media = entry["media"] as! [[String: String]]
             try require(media.count == archive.index.mediaFiles.count, "media count")
             for (expected, listed) in zip(media, archive.index.mediaFiles) {
@@ -140,6 +142,24 @@ final class CompatFixtureTests: XCTestCase {
                 try require(CompatWriter.sha256(Data(contentsOf: thumb)) == expected["thumbSha256"], "thumbnail of \(listed.id)")
             }
             try require(try archive.isAtEnd(), "records left over")
+        case "sharedItems":
+            let reader = try SharedItemsReader(url: file, password: entry["password"] as? String)
+            let items = entry["items"] as! [[String: Any]]
+            try require(reader.manifest.items.count == items.count, "item count")
+            for (expected, item) in zip(items, reader.manifest.items) {
+                try require(item.kind == expected["kind"] as? String, "kind")
+                try require(item.type == expected["type"] as? String, "type of \(item.kind)")
+                try require(item.name == expected["name"] as? String, "name of \(item.kind)")
+                let parts = expected["parts"] as! [[String: Any]]
+                try require(item.parts.map { Optional($0.role) } == parts.map { $0["role"] as? String }, "parts of \(item.kind)")
+                for (expectedPart, part) in zip(parts, item.parts) {
+                    var data = Data()
+                    try reader.read(part) { data.append($0) }
+                    try require(data == CompatWriter.plaintext(expectedPart["count"] as! Int, expectedPart["seed"] as! Int),
+                                "\(item.kind) \(part.role) differs")
+                }
+            }
+            try reader.finish()
         default:
             throw Mismatch(what: "unknown case kind")
         }

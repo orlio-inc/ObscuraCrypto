@@ -5,7 +5,7 @@ import Foundation
 import ObscuraCrypto
 
 let usage = """
-obscura: create, inspect and decrypt Obscura vault and media files.
+obscura: create, inspect and decrypt Obscura vault, media and shared files.
 
 VAULT
   obscura vault create <file>         Write a new vault header, prompting for a password
@@ -29,6 +29,14 @@ EXPORT
   obscura export extract <file.obscura> <out-dir>
                                       Decrypt an export's photos and videos to <out-dir>
 
+SHARED ITEMS (.obscurashared, what Send Encrypted makes)
+  obscura shared encrypt <out.obscurashared> <file>... [--generate-password | --open] [--live-photos] [--force]
+                                      Seal photos, videos and PDFs, prompting for a password
+  obscura shared verify <file.obscurashared>
+                                      Check every item without writing anything
+  obscura shared decrypt <file.obscurashared> <out-dir>
+                                      Decrypt every item to <out-dir>
+
 `vault extract` and `export extract` write only photos and videos, never the
 vault's database or the export's manifest. Media in a password-protected folder
 is not extracted: its second key lives in the vault's database.
@@ -36,9 +44,16 @@ is not extracted: its second key lives in the vault's database.
 OPTIONS
   --password-stdin    Read passwords from standard input, one per line, in the
                       order they are asked for. For scripts and tests.
-  --force             Let media encrypt and decrypt replace an existing <out>.
-                      Without it they refuse, so a mistyped path cannot
-                      overwrite one of your files.
+  --force             Let media encrypt and decrypt, and shared encrypt, replace
+                      an existing <out>. Without it they refuse, so a mistyped
+                      path cannot overwrite one of your files.
+  --generate-password shared encrypt: make a password of six random words and
+                      show it, rather than ask for one. A typed one needs 6
+                      characters; one that is easy to guess gets a note.
+  --open              shared encrypt: no password. The file holds its own key,
+                      so anyone who has the file can open it, or change it.
+  --live-photos       shared encrypt: send a photo and a video with the same
+                      name (IMG_0001.HEIC, IMG_0001.MOV) as one Live Photo.
 
 Passwords are never taken as arguments, so they stay out of shell history.
 Keys are never printed. `unlock` shows a fingerprint: the first 8 bytes of
@@ -133,33 +148,40 @@ func run(_ raw: [String]) throws {
     case ("media", "decrypt"):
         let input = URL(fileURLWithPath: try arguments.positional(0, "in"))
         let output = try outputURL(arguments)
+        try Interruption.requirePrivateFolder(output.deletingLastPathComponent())
         let masterKey = try unlockVault(arguments, stdin: stdin)
         let folderKey = try unlockFolder(arguments, stdin: stdin)
         let prefix = try FileHandle(forReadingFrom: input).read(upToCount: 4) ?? Data()
         switch MediaFormat.detect(prefix) {
         case .chunked:
             let reader = try ChunkedMediaReader(url: input)
-            try reader.decrypt(to: output, masterKey: masterKey, folderKey: folderKey)
+            try Interruption.cleaningUp(output.deletingLastPathComponent()) {
+                try reader.decrypt(to: output, masterKey: masterKey, folderKey: folderKey)
+            }
             print("Decrypted \(reader.header.chunkCount) chunks to \(output.path)")
         case .singleShot:
-            try SingleShotMedia.decrypt(Data(contentsOf: input), masterKey: masterKey, folderKey: folderKey)
-                .write(to: output, options: .atomic)
+            let plaintext = try SingleShotMedia.decrypt(Data(contentsOf: input), masterKey: masterKey, folderKey: folderKey)
+            try Interruption.cleaningUp(output.deletingLastPathComponent()) {
+                try Terminal.writePrivately(plaintext, to: output)
+            }
             print("Decrypted to \(output.path)")
         }
 
     case ("media", "inspect"):
         let url = URL(fileURLWithPath: try arguments.positional(0, "file"))
-        let prefix = try FileHandle(forReadingFrom: url).read(upToCount: ChunkedMediaHeader.size) ?? Data()
+        let prefix = try FileHandle(forReadingFrom: url).read(upToCount: ChunkedMediaHeader.maximumSize) ?? Data()
         let size = try FileManager.default.attributesOfItem(atPath: url.path)[.size] as? UInt64 ?? 0
         switch MediaFormat.detect(prefix) {
         case .chunked:
             let header = try ChunkedMediaReader(url: url).header
             Terminal.printFields([
-                ("Format", "chunked (OBCM, version 1)"),
+                ("Format", "chunked (OBCM, version \(header.formatVersion))"),
                 ("Plaintext", Terminal.byteCount(header.totalPlaintextSize)),
                 ("Chunks", "\(header.chunkCount) of up to \(header.chunkPlaintextSize) bytes"),
                 ("Folder layer", header.hasFolderLayer ? "yes, 56 bytes of overhead per chunk" : "no, 28 bytes of overhead per chunk"),
                 ("Nonce prefix", Terminal.hex(header.noncePrefix)),
+                ("Keys", header.keySalt.map { "this file's own, derived with salt \(Terminal.hex($0))" }
+                    ?? "the vault's and folder's keys as they are"),
                 ("File length", "\(size) bytes, matches the header"),
             ])
         case .singleShot:
@@ -198,10 +220,13 @@ func run(_ raw: [String]) throws {
         // small.
         let ids = try mediaIDs(in: pool).sorted()
         var extracted = 0
-        for id in ids where opens(id, in: pool, masterKey: masterKey) {
-            if case .extracted = try MediaExtraction.extract(
-                storedFile: pool.appendingPathComponent("\(id).data.enc"), id: id, masterKey: masterKey, into: outDir) {
-                extracted += 1
+        try Interruption.cleaningUp(outDir) {
+            for id in ids where opens(id, in: pool, masterKey: masterKey) {
+                Interruption.checkpoint()
+                if case .extracted = try MediaExtraction.extract(
+                    storedFile: pool.appendingPathComponent("\(id).data.enc"), id: id, masterKey: masterKey, into: outDir) {
+                    extracted += 1
+                }
             }
         }
         Terminal.printFields([
@@ -212,15 +237,25 @@ func run(_ raw: [String]) throws {
 
     case ("export", "inspect"):
         let url = URL(fileURLWithPath: try arguments.positional(0, "file"))
-        let header = try ExportHeader(parsing: try FileHandle(forReadingFrom: url).read(upToCount: ExportHeader.size) ?? Data())
+        let header = try ExportHeader(parsing: try FileHandle(forReadingFrom: url).read(upToCount: ExportHeader.maximumSize) ?? Data())
         let size = try FileManager.default.attributesOfItem(atPath: url.path)[.size] as? UInt64 ?? 0
-        Terminal.printFields([
+        var rows = [
             ("Format", "Obscura export, version \(header.version)"),
             ("Key", "PBKDF2-HMAC-SHA256, \(header.kdfIterations) rounds, then AES-256-GCM"),
             ("Salt", Terminal.hex(header.salt)),
             ("Nonce prefix", Terminal.hex(header.noncePrefix)),
-            ("Encrypted", Terminal.byteCount(size - UInt64(ExportHeader.size)) + " after the 64-byte header"),
-        ])
+        ]
+        if header.version >= 2 {
+            rows.append(("Records", "\(header.recordSize) bytes each, all the same size"))
+            rows.append(("Other locks", header.lockTypes.isEmpty
+                ? "none: it opens with its password only"
+                : "\(header.lockTypes.count) of types this version does not know (\(header.lockTypes.map(String.init).joined(separator: ", "))), passed over"))
+        }
+        rows.append(("Encrypted", Terminal.byteCount(size - UInt64(header.byteCount)) + " after the \(header.byteCount)-byte header"))
+        rows.append(("Shows", header.version >= 2
+            ? "only roughly how much it holds: the files inside, their number and sizes are sealed"
+            : "how many files it holds and the size of each, as every file starts a record of its own"))
+        Terminal.printFields(rows)
 
     case ("export", "extract"):
         let url = URL(fileURLWithPath: try arguments.positional(0, "file.obscura"))
@@ -241,19 +276,20 @@ func run(_ raw: [String]) throws {
         var extracted = 0, layered = 0
         // Each stored file is staged in a folder made fresh for this run, owner-only,
         // so a name someone planted in out-dir (a link, say) is never written through.
-        let staging = outDir.appendingPathComponent(".obscura-staging-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(
-            at: staging, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
-        defer { try? FileManager.default.removeItem(at: staging) }
-        for media in archive.index.mediaFiles {
-            let stored = staging.appendingPathComponent("\(media.id).stored")
-            defer { try? FileManager.default.removeItem(at: stored) }
-            try archive.copyStoredFile(size: media.dataSize, to: stored)
-            try archive.copyStoredFile(size: media.thumbnailSize, to: nil)
-            guard media.dataSize > 0 else { continue }
-            switch try MediaExtraction.extract(storedFile: stored, id: media.id, masterKey: masterKey, into: outDir) {
-            case .extracted: extracted += 1
-            case .notOpenedByMasterKey: layered += 1
+        try Interruption.cleaningUp(outDir) {
+            let staging = try Interruption.makeStaging(in: outDir)
+            defer { Interruption.removeStaging(staging) }
+            for media in archive.index.mediaFiles {
+                Interruption.checkpoint()
+                let stored = staging.appendingPathComponent("\(media.id).stored")
+                defer { try? FileManager.default.removeItem(at: stored) }
+                try archive.copyStoredFile(size: media.dataSize, to: stored)
+                try archive.copyStoredFile(size: media.thumbnailSize, to: nil)
+                guard media.dataSize > 0 else { continue }
+                switch try MediaExtraction.extract(storedFile: stored, id: media.id, masterKey: masterKey, into: outDir) {
+                case .extracted: extracted += 1
+                case .notOpenedByMasterKey: layered += 1
+                }
             }
         }
         guard try archive.isAtEnd() else {
@@ -263,6 +299,15 @@ func run(_ raw: [String]) throws {
             ("Extracted", "\(extracted) photos and videos to \(outDir.path)"),
             ("Not extracted", "\(layered) in password-protected folders"),
         ])
+
+    case ("shared", "encrypt"):
+        try SharedCommands.encrypt(arguments, stdin: stdin)
+
+    case ("shared", "verify"):
+        try SharedCommands.verify(arguments, stdin: stdin)
+
+    case ("shared", "decrypt"):
+        try SharedCommands.decrypt(arguments, stdin: stdin)
 
     default:
         throw CLIError("unknown command \"\(raw[0]) \(raw[1])\"; run obscura with no arguments for help")
@@ -298,7 +343,7 @@ func mediaIDs(in pool: URL) throws -> [String] {
     try FileManager.default.contentsOfDirectory(atPath: pool.path).compactMap { name in
         guard name.hasSuffix(".data.enc") else { return nil }
         let id = String(name.dropLast(".data.enc".count))
-        return UUID(uuidString: id) != nil ? id : nil
+        return MediaExtraction.isMediaID(id) ? id : nil
     }
 }
 
@@ -313,6 +358,7 @@ func opens(_ id: String, in pool: URL, masterKey: SecureBytes) -> Bool {
 func outputDirectory(_ arguments: Arguments) throws -> URL {
     let url = URL(fileURLWithPath: try arguments.positional(1, "out-dir"), isDirectory: true)
     try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+    try Interruption.requirePrivateFolder(url)
     return url
 }
 
@@ -358,6 +404,7 @@ struct FolderFile: Codable {
     }
 }
 
+Interruption.install()
 do {
     try run(Array(CommandLine.arguments.dropFirst()))
 } catch {
